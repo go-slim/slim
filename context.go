@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"zestack.dev/log"
 )
@@ -23,6 +24,7 @@ import (
 // Context represents the context of the current HTTP request. It holds request and
 // response objects, path, path parameters, data and registered handler.
 type Context interface {
+	stdctx.Context
 	Context() stdctx.Context
 	// Request returns `*http.Request`.
 	// 返回当前请求的 `*http.Request` 结构体实例。
@@ -762,6 +764,31 @@ func (x *context) Error(err error) {
 
 func (x *context) Slim() *Slim {
 	return x.slim
+}
+
+func (x *context) Deadline() (deadline time.Time, ok bool) {
+	return x.Context().Deadline()
+}
+
+func (x *context) Done() <-chan struct{} {
+	return x.Context().Done()
+}
+
+func (x *context) Err() error {
+	return x.Context().Err()
+}
+
+func (x *context) Value(key any) any {
+	x.mu.RLock()
+	if ks, ok := key.(string); ok {
+		value, has := x.store[ks]
+		if has {
+			x.mu.RUnlock()
+			return value
+		}
+	}
+	x.mu.RUnlock()
+	return x.Context().Value(key)
 }
 
 // PathParams 路由参数
