@@ -422,8 +422,8 @@ func (s *Slim) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := s.AcquireContext().(EditableContext)
 	c.Reset(w, r)
 	router := s.findRouter(r)
-	stack := append(s.middleware, router.Middleware()...)
-	mw := Compose(stack...)
+	//stack := append(s.middleware, router.Middleware()...)
+	mw := Compose(s.middleware...)
 	var err error
 	if mw == nil {
 		err = s.findHandler(c, router)(c)
@@ -496,6 +496,12 @@ func (s *Slim) findHandler(c EditableContext, router Router) HandlerFunc {
 	c.SetRouteMatchType(match.Type)
 	if i, ok := c.(interface{ SetRouter(Router) }); ok {
 		i.SetRouter(router)
+	}
+	mw := router.Compose()
+	if mw != nil {
+		return func(c Context) error {
+			return mw(c, match.Handler)
+		}
 	}
 	return match.Handler
 }
