@@ -17,8 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"zestack.dev/log"
 )
 
 // Context represents the context of the current HTTP request. It holds request and
@@ -37,9 +35,9 @@ type Context interface {
 	// SetResponse sets `slim.ResponseWriter`.
 	SetResponse(r ResponseWriter)
 	// Logger returns the `Logger` instance.
-	Logger() log.Logger
+	Logger() *Logger
 	// SetLogger Set the logger
-	SetLogger(logger log.Logger)
+	SetLogger(logger *Logger)
 	// Filesystem returns `fs.FS`.
 	Filesystem() fs.FS
 	// SetFilesystem sets `fs.FS`
@@ -206,7 +204,7 @@ type context struct {
 	// Lifecycle is not handle by Slim and could have excess allocations per served Request
 	currentParams PathParams
 	negotiator    *Negotiator
-	logger        log.Logger
+	logger        *Logger
 	query         url.Values
 	store         map[string]any
 	slim          *Slim
@@ -255,7 +253,7 @@ func (x *context) SetResponse(w ResponseWriter) {
 	x.response = w
 }
 
-func (x *context) Logger() log.Logger {
+func (x *context) Logger() *Logger {
 	if x.logger != nil {
 		return x.logger
 	}
@@ -265,7 +263,7 @@ func (x *context) Logger() log.Logger {
 	return x.slim.Logger
 }
 
-func (x *context) SetLogger(l log.Logger) {
+func (x *context) SetLogger(l *Logger) {
 	x.logger = l
 }
 

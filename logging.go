@@ -2,12 +2,13 @@ package slim
 
 import (
 	stdctx "context"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/rs/xid"
 	"zestack.dev/color"
-	"zestack.dev/log"
 )
 
 type LoggingConfig struct {
@@ -45,14 +46,14 @@ func (config LoggingConfig) ToMiddleware() MiddlewareFunc {
 		start := time.Now()
 		l := c.Logger()
 		if !config.DisableRequestID {
-			l = l.With(log.String("id", config.RequestIDGenerator(c)))
+			l = l.With(slog.String("id", config.RequestIDGenerator(c)))
 		}
-		l.Trace("Started %s %s for %s", c.Request().Method, c.RequestURI(), c.RealIP())
+		l.Info(fmt.Sprintf("Started %s %s for %s", c.Request().Method, c.RequestURI(), c.RealIP()))
 		ctx := stdctx.WithValue(c.Context(), "logger", l)
 		c.SetRequest(c.Request().WithContext(ctx))
 		c.SetLogger(l)
 		if err = next(c); err != nil {
-			c.Logger().Error(err)
+			c.Logger().Error(err.Error())
 		}
 		stop := time.Now()
 		status := c.Response().Status()
@@ -75,14 +76,14 @@ func (config LoggingConfig) ToMiddleware() MiddlewareFunc {
 			coloredStatus = color.NewValue(status, color.FgGreen)
 		}
 
-		l.Trace(
+		l.Info(fmt.Sprintf(
 			"Completed %s %s %v %s in %s",
 			c.Request().Method,
 			c.RequestURI(),
 			coloredStatus,
 			http.StatusText(c.Response().Status()),
 			stop.Sub(start).String(),
-		)
+		))
 		return
 	}
 }

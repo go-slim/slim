@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	stdLog "log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -20,7 +21,6 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"zestack.dev/color"
-	"zestack.dev/log"
 )
 
 // MIME types
@@ -181,7 +181,7 @@ type Slim struct {
 	Renderer             Renderer // 自定义错误处理函数
 	JSONSerializer       Serializer
 	XMLSerializer        Serializer
-	Logger               log.Logger
+	Logger               *Logger
 	Server               *http.Server
 	TLSServer            *http.Server
 	Listener             net.Listener
@@ -222,7 +222,7 @@ func New() *Slim {
 		Renderer:             nil,
 		JSONSerializer:       &JSONSerializer{},
 		XMLSerializer:        &XMLSerializer{},
-		Logger:               log.Default(),
+		Logger:               NewLogger(&LoggerOptions{}),
 		Debug:                true,
 		MultipartMemoryLimit: 32 << 20, // 32 MB
 		PrettyIndent:         "  ",
@@ -634,8 +634,8 @@ func (s *Slim) configureServer(srv *http.Server) error {
 	l := getColorWriter(s.Logger.Output())
 	srv.ErrorLog = s.StdLogger
 	srv.Handler = s
-	if s.Debug && !s.Logger.Enabled(nil, log.LevelDebug) {
-		s.Logger.SetLevel(log.LevelDebug)
+	if s.Debug && !s.Logger.Enabled(nil, slog.LevelDebug) {
+		s.Logger.SetLevel(slog.LevelDebug)
 	}
 
 	if !s.HideBanner {
@@ -697,8 +697,8 @@ func (s *Slim) StartH2CServer(address string, h2s *http2.Server) error {
 	srv.Addr = address
 	srv.ErrorLog = s.StdLogger
 	srv.Handler = h2c.NewHandler(s, h2s)
-	if s.Debug && !s.Logger.Enabled(nil, log.LevelDebug) {
-		s.Logger.SetLevel(log.LevelDebug)
+	if s.Debug && !s.Logger.Enabled(nil, slog.LevelDebug) {
+		s.Logger.SetLevel(slog.LevelDebug)
 	}
 
 	if !s.HideBanner {
@@ -746,6 +746,14 @@ func (s *Slim) Shutdown(ctx stdctx.Context) error {
 func WrapHandler(h http.Handler) HandlerFunc {
 	return func(c Context) error {
 		h.ServeHTTP(c.Response(), c.Request())
+		return nil
+	}
+}
+
+// WrapHandlerFunc wraps `http.HandlerFunc` into `slim.HandlerFunc`.
+func WrapHandlerFunc(h http.HandlerFunc) HandlerFunc {
+	return func(c Context) error {
+		h(c.Response(), c.Request())
 		return nil
 	}
 }
