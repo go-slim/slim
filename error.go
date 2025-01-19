@@ -20,13 +20,11 @@ var (
 	ErrInternalServerError         = NewHTTPError(http.StatusInternalServerError)
 	ErrRequestTimeout              = NewHTTPError(http.StatusRequestTimeout)
 	ErrServiceUnavailable          = NewHTTPError(http.StatusServiceUnavailable)
-	ErrValidatorNotRegistered      = errors.New("validator not registered")
-	ErrRendererNotRegistered       = errors.New("renderer not registered")
-	ErrInvalidRedirectCode         = errors.New("invalid redirect status code")
-	ErrCookieNotFound              = errors.New("cookie not found")
-	ErrInvalidCertOrKeyType        = errors.New("invalid cert or key type, must be string or []byte")
-	ErrInvalidListenerNetwork      = errors.New("invalid listener network")
-	ErrFilesystemNotRegistered     = errors.New("filesystem not registered")
+	ErrValidatorNotRegistered      = errors.New("slim: validator not registered")
+	ErrRendererNotRegistered       = errors.New("slim: renderer not registered")
+	ErrInvalidRedirectCode         = errors.New("slim: invalid redirect status code")
+	ErrCookieNotFound              = errors.New("slim: cookie not found")
+	ErrFilesystemNotRegistered     = errors.New("slim: filesystem not registered")
 )
 
 // HTTPError represents an error that occurred while handling a request.

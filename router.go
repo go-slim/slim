@@ -16,36 +16,88 @@ import (
 
 // Router is interface for routing requests to registered routes.
 type Router interface {
+	// MiddlewareRegistrar 实现中间件注册接口
+	MiddlewareRegistrar
+	// MiddlewareComposer 实现中间件合成器接口
+	MiddlewareComposer
+	// ErrorHandlerRegistrar 实现错误处理器注册接口
+	ErrorHandlerRegistrar
+	// RouteRegistrar 实现路由注册器接口
+	RouteRegistrar
+	// RouteMatcher 实现路由匹配器接口
+	RouteMatcher
 	// Add 注册请求处理器，返回对应的路由接口实例
 	Add([]string, string, HandlerFunc) (Route, error)
 	// Remove 移除路由
 	Remove(methods []string, path string) error
 	// Routes 返回注册的路由
 	Routes() []Route
+}
+
+// RouteMatchType describes possible states that request could be in perspective of routing
+type RouteMatchType uint8
+
+const (
+	// RouteMatchUnknown is state before routing is done. Default state for fresh context.
+	RouteMatchUnknown RouteMatchType = iota
+	// RouteMatchNotFound is state when router did not find matching route for current request
+	RouteMatchNotFound
+	// RouteMatchMethodNotAllowed is state when router did not find route with matching path + method for current request.
+	// Although router had a matching route with that path but different method.
+	RouteMatchMethodNotAllowed
+	// RouteMatchFound is state when router found exact match for path + method combination
+	RouteMatchFound
+)
+
+// RouteMatch is result object for Router.Match. Its main purpose is to avoid allocating memory for PathParams inside router.
+type RouteMatch struct {
+	// Type contains a result as enumeration of Router.Match and helps to understand did Router actually matched Route or
+	// what kind of error case (404/405) we have at the end of the handler chain.
+	Type RouteMatchType
+	// AllowMethods 能够接受处理的请求方法列表，主要
+	// 在 Type 值为 RouteMatchMethodNotAllowed 时被使用。
+	AllowMethods []string
+	// Handler is function(chain) that was matched by router. In case of no match could result to ErrNotFound or ErrMethodNotAllowed.
+	Handler HandlerFunc
+	// RouteInfo is information about the route we just matched
+	RouteInfo RouteInfo
+}
+
+// RouteMatcher 路由匹配器接口
+type RouteMatcher interface {
 	// Match 匹配路由
-	Match(req *http.Request, params *PathParams) RouteMatch
-	MiddlewareRegistrar
-	MiddlewareComposer
-	RouteRegistrar
+	Match(r *http.Request, p *PathParams) RouteMatch
 }
 
 // RouteCollector 路由收集器接口
 type RouteCollector interface {
+	// MiddlewareRegistrar 实现中间件注册接口
+	MiddlewareRegistrar
+	// MiddlewareComposer 实现中间件合成器接口
+	MiddlewareComposer
+	// ErrorHandlerRegistrar 实现错误处理器注册接口
+	ErrorHandlerRegistrar
+	// RouteRegistrar 实现路由注册器接口
+	RouteRegistrar
 	// Prefix 返回路由共用前缀
 	Prefix() string
 	// Parent 返回上级路由收集器
 	Parent() RouteCollector
 	// Router 返回所属路由器
 	Router() Router
-	MiddlewareRegistrar
-	MiddlewareComposer
-	RouteRegistrar
 }
 
+// RouteRegistrar 路由注册器接口
+//
+// 其中 RouteRegistrar.Some 和 RouteRegistrar.Any 以及
+// RouteRegistrar.Handle 为我们自定义非标准的 HTTP 请求方法
+// 提供了扩展的能力。
 type RouteRegistrar interface {
-	// Group 实现路由分组注册，实际调用 `RouteCollector.Route` 实现
+	// Group 对路由进行分组，方便我们把一个或多个中间件作用在
+	// 同组路由上，并使它们在错误和 panic 上使用相同的处理方式
 	Group(fn func(sub RouteCollector))
-	// Route 以指定前缀实现路由分组注册
+	// Route 为同组路由指定相同的前缀，使用方法和内部逻辑与
+	// 方法 Group 保持一致
 	Route(prefix string, fn func(sub RouteCollector))
 	// Some registers a new route for multiple HTTP methods and path with matching
 	// handler in the router. Panics on error.
@@ -80,6 +132,8 @@ type RouteRegistrar interface {
 	// TRACE registers a new TRACE route for a path with matching handler in
 	// the router. Panics on error.
 	TRACE(pattern string, h HandlerFunc) Route
+	// Handle 注册一个支持指定请求方法的路由
+	Handle(method, pattern string, h HandlerFunc) Route
 	// Static registers a new route with path prefix to serve static files
 	// from the provided root directory. Panics on error.
 	Static(prefix, root string) Route
@@ -90,14 +144,18 @@ type RouteRegistrar interface {
 
 // Route 路由接口
 type Route interface {
+	// MiddlewareRegistrar 实现中间件注册接口
+	MiddlewareRegistrar
+	// MiddlewareComposer 实现中间件合成器接口
+	MiddlewareComposer
 	// Router 返回所属路由器
 	Router() Router
 	// Collector 返回所属收集器
 	Collector() RouteCollector
 	// Name 返回路由名称
 	Name() string
-	// SetName 设置路由名称，返回 Route 方便链式操作。
-	SetName(name string) Route
+	// SetName 设置路由名称
+	SetName(name string)
 	// Pattern 路由路径表达式
 	Pattern() string
 	// Methods 返回支持的 HTTP 请求方法
@@ -106,13 +164,8 @@ type Route interface {
 	Handler() HandlerFunc
 	// Params 返回支持的路由参数列表
 	Params() []string
-	// ToRouteInfo 返回路由描述接口实例
-	ToRouteInfo() RouteInfo
-	// Use 注册中间件，返回 Route 方便链式操作。
-	Use(middleware ...MiddlewareFunc) Route
-	// Middleware 返回注册的中间件
-	Middleware() []MiddlewareFunc
-	MiddlewareComposer
+	// RouteInfo 返回路由描述接口实现
+	RouteInfo() RouteInfo
 }
 
 // RouteInfo 路由描述接口
@@ -133,35 +186,8 @@ type RouteInfo interface {
 	// 如果参数为空或 nil 时则尝试使用用默认值，若无法解决参数
 	// 则会 panic 错误
 	Reverse(params ...any) string
-}
-
-// RouteMatchType describes possible states that request could be in perspective of routing
-type RouteMatchType uint8
-
-const (
-	// RouteMatchUnknown is state before routing is done. Default state for fresh context.
-	RouteMatchUnknown RouteMatchType = iota
-	// RouteMatchNotFound is state when router did not find matching route for current request
-	RouteMatchNotFound
-	// RouteMatchMethodNotAllowed is state when router did not find route with matching path + method for current request.
-	// Although router had a matching route with that path but different method.
-	RouteMatchMethodNotAllowed
-	// RouteMatchFound is state when router found exact match for path + method combination
-	RouteMatchFound
-)
-
-// RouteMatch is result object for Router.Match. Its main purpose is to avoid allocating memory for PathParams inside router.
-type RouteMatch struct {
-	// Type contains a result as enumeration of Router.Match and helps to understand did Router actually matched Route or
-	// what kind of error case (404/405) we have at the end of the handler chain.
-	Type RouteMatchType
-	// AllowMethods 能够接受处理的请求方法列表，主要
-	// 在 Type 值为 RouteMatchMethodNotAllowed 时被使用。
-	AllowMethods []string
-	// Handler is function(chain) that was matched by router. In case of no match could result to ErrNotFound or ErrMethodNotAllowed.
-	Handler HandlerFunc
-	// RouteInfo is information about the route we just matched
-	RouteInfo RouteInfo
+	// String 返回字符串形式
+	String() string
 }
 
 type RouterConfig struct {
@@ -170,16 +196,14 @@ type RouterConfig struct {
 	UseEscapedPathForRouting bool
 	RoutingTrailingSlash     bool
 	RouteCollector           RouteCollector
-	ErrorHandler             ErrorHandlerFunc
 }
 
 func NewRouter(config RouterConfig) Router {
-	r := &defaultRouter{
+	r := &routerImpl{
 		collector:                config.RouteCollector,
 		tree:                     &node{},
 		routes:                   make([]Route, 0),
 		middleware:               make([]MiddlewareFunc, 0),
-		errorHandler:             config.ErrorHandler,
 		allowOverwritingRoute:    config.AllowOverwritingRoute,
 		unescapePathParamValues:  config.UnescapePathParamValues,
 		useEscapedPathForRouting: config.UseEscapedPathForRouting,
@@ -198,13 +222,13 @@ func NewRouteCollector(prefix string, parent RouteCollector, router Router) Rout
 		}
 	} else if parent != nil {
 		if parent.Router() != router {
-			panic("invalid router for the given parent")
+			panic("slim: invalid router for the given parent")
 		}
 	}
 	if router == nil {
-		panic("no router")
+		panic("slim: no router found")
 	}
-	return &defaultRouteCollector{
+	return &routeCollectorImpl{
 		prefix: prefix,
 		parent: parent,
 		router: router,
@@ -213,12 +237,12 @@ func NewRouteCollector(prefix string, parent RouteCollector, router Router) Rout
 
 var nextRouteId uint32
 
-type defaultRouter struct {
+type routerImpl struct {
 	collector    RouteCollector   // 路由收集器
 	tree         *node            // 路由节点树，与根节点的节点树相同
-	routes       []Route          // 实际类型是 `[]*defaultRoute`
+	routes       []Route          // 实际类型是 `[]*routeImpl`
 	middleware   []MiddlewareFunc // 中间件列表
-	errorHandler ErrorHandlerFunc // 路由级别的错误处理器
+	errorHandler ErrorHandler     // 路由级别的错误处理器
 	slim         *Slim
 
 	allowOverwritingRoute    bool
@@ -227,23 +251,27 @@ type defaultRouter struct {
 	routingTrailingSlash     bool
 }
 
-func (r *defaultRouter) Use(middleware ...MiddlewareFunc) {
+func (r *routerImpl) UseErrorHandler(h ErrorHandler) {
+	r.errorHandler = h
+}
+
+func (r *routerImpl) Use(middleware ...MiddlewareFunc) {
 	r.middleware = append(r.middleware, middleware...)
 }
 
-func (r *defaultRouter) Middleware() []MiddlewareFunc {
+func (r *routerImpl) Middleware() []MiddlewareFunc {
 	return r.middleware
 }
 
-func (r *defaultRouter) Compose() MiddlewareFunc {
+func (r *routerImpl) Compose() MiddlewareFunc {
 	return Compose(r.middleware...)
 }
 
-func (r *defaultRouter) Add(methods []string, pattern string, h HandlerFunc) (Route, error) {
+func (r *routerImpl) Add(methods []string, pattern string, h HandlerFunc) (Route, error) {
 	segments, trailingSlash := split(pattern)
 	params := make([]string, 0)
 	tail, _ := r.tree.insert(segments, &params, 0)
-	route := &defaultRoute{
+	route := &routeImpl{
 		id:      atomic.AddUint32(&nextRouteId, 1),
 		pattern: strings.Join(segments, ""),
 		methods: methods,
@@ -256,7 +284,7 @@ func (r *defaultRouter) Add(methods []string, pattern string, h HandlerFunc) (Ro
 				panic(errors.New("slim: adding duplicate route (same method+path) is not allowed"))
 			}
 			r.routes = slices.DeleteFunc(r.routes, func(route Route) bool {
-				return route.(*defaultRoute).id == e.routeId
+				return route.(*routeImpl).id == e.routeId
 			})
 			e.trailingSlash = trailingSlash
 			e.routeId = route.id
@@ -278,68 +306,72 @@ func (r *defaultRouter) Add(methods []string, pattern string, h HandlerFunc) (Ro
 	return route, nil
 }
 
-func (r *defaultRouter) Group(fn func(sub RouteCollector)) {
+func (r *routerImpl) Group(fn func(sub RouteCollector)) {
 	r.collector.Group(fn)
 }
 
-func (r *defaultRouter) Route(prefix string, fn func(sub RouteCollector)) {
+func (r *routerImpl) Route(prefix string, fn func(sub RouteCollector)) {
 	r.collector.Route(prefix, fn)
 }
 
-func (r *defaultRouter) Some(methods []string, pattern string, h HandlerFunc) Route {
+func (r *routerImpl) Some(methods []string, pattern string, h HandlerFunc) Route {
 	return r.collector.Some(methods, pattern, h)
 }
 
-func (r *defaultRouter) Any(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) Any(pattern string, h HandlerFunc) Route {
 	return r.collector.Any(pattern, h)
 }
 
-func (r *defaultRouter) CONNECT(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) CONNECT(pattern string, h HandlerFunc) Route {
 	return r.collector.CONNECT(pattern, h)
 }
 
-func (r *defaultRouter) DELETE(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) DELETE(pattern string, h HandlerFunc) Route {
 	return r.collector.DELETE(pattern, h)
 }
 
-func (r *defaultRouter) GET(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) GET(pattern string, h HandlerFunc) Route {
 	return r.collector.GET(pattern, h)
 }
 
-func (r *defaultRouter) HEAD(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) HEAD(pattern string, h HandlerFunc) Route {
 	return r.collector.HEAD(pattern, h)
 }
 
-func (r *defaultRouter) OPTIONS(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) OPTIONS(pattern string, h HandlerFunc) Route {
 	return r.collector.OPTIONS(pattern, h)
 }
 
-func (r *defaultRouter) PATCH(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) PATCH(pattern string, h HandlerFunc) Route {
 	return r.collector.PATCH(pattern, h)
 }
 
-func (r *defaultRouter) POST(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) POST(pattern string, h HandlerFunc) Route {
 	return r.collector.POST(pattern, h)
 }
 
-func (r *defaultRouter) PUT(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) PUT(pattern string, h HandlerFunc) Route {
 	return r.collector.PUT(pattern, h)
 }
 
-func (r *defaultRouter) TRACE(pattern string, h HandlerFunc) Route {
+func (r *routerImpl) TRACE(pattern string, h HandlerFunc) Route {
 	return r.collector.TRACE(pattern, h)
 }
 
-func (r *defaultRouter) Static(prefix, root string) Route {
+func (r *routerImpl) Handle(method, pattern string, h HandlerFunc) Route {
+	return r.collector.Handle(method, pattern, h)
+}
+
+func (r *routerImpl) Static(prefix, root string) Route {
 	return r.collector.Static(prefix, root)
 }
 
-func (r *defaultRouter) File(pattern, file string) Route {
+func (r *routerImpl) File(pattern, file string) Route {
 	return r.collector.File(pattern, file)
 }
 
 // Remove 通过 `method+pattern` 的组合移除服务端点
-func (r *defaultRouter) Remove(methods []string, pattern string) error {
+func (r *routerImpl) Remove(methods []string, pattern string) error {
 	segments, trailingSlash := split(pattern)
 	routes, ok := r.tree.remove(methods, trailingSlash, r.routingTrailingSlash, segments, 0)
 	if !ok {
@@ -347,21 +379,21 @@ func (r *defaultRouter) Remove(methods []string, pattern string) error {
 	}
 	for _, route := range routes {
 		i := slices.IndexFunc(r.routes, func(x Route) bool {
-			return x.(*defaultRoute).id == route
+			return x.(*routeImpl).id == route
 		})
 		if i == -1 {
 			return errors.New("route not found")
 		}
-		r.routes[i].(*defaultRoute).Remove()
+		r.routes[i].(*routeImpl).Remove()
 	}
 	return nil
 }
 
-func (r *defaultRouter) Routes() []Route {
+func (r *routerImpl) Routes() []Route {
 	return r.routes
 }
 
-func (r *defaultRouter) Match(req *http.Request, pathParams *PathParams) RouteMatch {
+func (r *routerImpl) Match(req *http.Request, pathParams *PathParams) RouteMatch {
 	*pathParams = (*pathParams)[0:cap(*pathParams)]
 	path := req.URL.Path
 	if r.useEscapedPathForRouting && req.URL.RawPath != "" {
@@ -386,9 +418,9 @@ func (r *defaultRouter) Match(req *http.Request, pathParams *PathParams) RouteMa
 		return result
 	}
 	// 查找路由
-	var route *defaultRoute
+	var route *routeImpl
 	for _, rr := range r.routes {
-		dr := rr.(*defaultRoute)
+		dr := rr.(*routeImpl)
 		if dr.id == ep.routeId {
 			route = dr
 			break
@@ -444,8 +476,19 @@ func (r *defaultRouter) Match(req *http.Request, pathParams *PathParams) RouteMa
 	}
 	result.Type = RouteMatchFound
 	result.Handler = ComposeChainHandler(route)
-	result.RouteInfo = route.ToRouteInfo()
+	result.RouteInfo = route.RouteInfo()
 	return result
+}
+
+func (r *routerImpl) HandleError(c Context, err error) {
+	if r.errorHandler != nil {
+		r.errorHandler.HandleError(c, err)
+	} else if eh := r.slim.ErrorHandler; eh != nil {
+		// 这里千万不能使用 c.Error(err) 来处理错误，否则
+		// 会陷入死循环，这是因为方法 c.Error 是从路由向上
+		// 递归查找错误处理器来处理错误的。
+		eh.HandleError(c, err)
+	}
 }
 
 // ComposeChainHandler 组合路由收集器的中间件和路由的中间件
@@ -477,117 +520,146 @@ func ComposeChainHandler(route Route) HandlerFunc {
 	}
 }
 
-type defaultRouteCollector struct {
-	prefix     string           // 路由前缀
-	parent     RouteCollector   // 上级路由收集器
-	router     Router           // 上级路由器
-	middleware []MiddlewareFunc // 中间件列表
+type routeCollectorImpl struct {
+	prefix       string           // 路由前缀
+	parent       RouteCollector   // 上级路由收集器
+	router       Router           // 上级路由器
+	middleware   []MiddlewareFunc // 中间件列表
+	errorHandler ErrorHandler
 }
 
-func (c *defaultRouteCollector) Prefix() string {
-	return c.prefix
+func (rc *routeCollectorImpl) UseErrorHandler(h ErrorHandler) {
+	rc.errorHandler = h
 }
 
-func (c *defaultRouteCollector) Parent() RouteCollector {
-	return c.parent
-}
-
-func (c *defaultRouteCollector) Router() Router {
-	return c.router
-}
-
-func (c *defaultRouteCollector) Use(middleware ...MiddlewareFunc) {
-	c.middleware = append(c.middleware, middleware...)
-}
-
-func (c *defaultRouteCollector) Middleware() []MiddlewareFunc {
-	return c.middleware
-}
-
-func (c *defaultRouteCollector) Compose() MiddlewareFunc {
-	return Compose(c.middleware...)
-}
-
-func (c *defaultRouteCollector) Group(fn func(sub RouteCollector)) {
-	if fn != nil {
-		fn(NewRouteCollector("", c, nil))
+func (rc *routeCollectorImpl) HandleError(c Context, err error) {
+	if rc.errorHandler != nil {
+		rc.errorHandler.HandleError(c, err)
+	} else if eh, ok := geteh(c, rc.parent, rc.router); ok {
+		eh.HandleError(c, err)
 	}
 }
 
-func (c *defaultRouteCollector) Route(prefix string, fn func(sub RouteCollector)) {
+func geteh(c Context, vs ...any) (ErrorHandler, bool) {
+	for _, v := range vs {
+		if v != nil {
+			if eh, ok := v.(ErrorHandler); ok {
+				return eh, true
+			}
+		}
+	}
+	if s, ok := c.Value(SlimContextKey).(*Slim); ok {
+		if eh := s.ErrorHandler; eh != nil {
+			return eh, true
+		}
+	}
+	return nil, false
+}
+
+func (rc *routeCollectorImpl) Prefix() string {
+	return rc.prefix
+}
+
+func (rc *routeCollectorImpl) Parent() RouteCollector {
+	return rc.parent
+}
+
+func (rc *routeCollectorImpl) Router() Router {
+	return rc.router
+}
+
+func (rc *routeCollectorImpl) Use(middleware ...MiddlewareFunc) {
+	rc.middleware = append(rc.middleware, middleware...)
+}
+
+func (rc *routeCollectorImpl) Middleware() []MiddlewareFunc {
+	return rc.middleware
+}
+
+func (rc *routeCollectorImpl) Compose() MiddlewareFunc {
+	return Compose(rc.middleware...)
+}
+
+func (rc *routeCollectorImpl) Group(fn func(sub RouteCollector)) {
 	if fn != nil {
-		fn(NewRouteCollector(prefix, c, nil))
+		fn(NewRouteCollector("", rc, nil))
 	}
 }
 
-func (c *defaultRouteCollector) Some(methods []string, pattern string, h HandlerFunc) Route {
+func (rc *routeCollectorImpl) Route(prefix string, fn func(sub RouteCollector)) {
+	if fn != nil {
+		fn(NewRouteCollector(prefix, rc, nil))
+	}
+}
+
+func (rc *routeCollectorImpl) Some(methods []string, pattern string, h HandlerFunc) Route {
 	var collector RouteCollector
-	collector = c
+	collector = rc
 	for collector != nil {
 		pattern = collector.Prefix() + pattern
 		collector = collector.Parent()
 	}
-	route, err := c.Router().Add(methods, pattern, h)
+	route, err := rc.Router().Add(methods, pattern, h)
 	if err != nil {
 		panic(err)
 	}
 	// TODO(hupeh): 需要更加合理的方式设置路由收集器
-	if dr, ok := route.(*defaultRoute); ok {
-		dr.collector = c
+	if dr, ok := route.(*routeImpl); ok {
+		dr.collector = rc
 	}
 	return route
 }
 
-func (c *defaultRouteCollector) Any(pattern string, h HandlerFunc) Route {
-	return c.Some([]string{"*"}, pattern, h)
+func (rc *routeCollectorImpl) Any(pattern string, h HandlerFunc) Route {
+	return rc.Some([]string{"*"}, pattern, h)
 }
 
-func (c *defaultRouteCollector) method(method string, pattern string, h HandlerFunc) Route {
-	return c.Some([]string{method}, pattern, h)
+func (rc *routeCollectorImpl) CONNECT(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodConnect, pattern, h)
 }
 
-func (c *defaultRouteCollector) CONNECT(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodConnect, pattern, h)
+func (rc *routeCollectorImpl) DELETE(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodDelete, pattern, h)
 }
 
-func (c *defaultRouteCollector) DELETE(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodDelete, pattern, h)
+func (rc *routeCollectorImpl) GET(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodGet, pattern, h)
 }
 
-func (c *defaultRouteCollector) GET(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodGet, pattern, h)
+func (rc *routeCollectorImpl) HEAD(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodHead, pattern, h)
 }
 
-func (c *defaultRouteCollector) HEAD(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodHead, pattern, h)
+func (rc *routeCollectorImpl) OPTIONS(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodOptions, pattern, h)
 }
 
-func (c *defaultRouteCollector) OPTIONS(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodOptions, pattern, h)
+func (rc *routeCollectorImpl) PATCH(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodPatch, pattern, h)
 }
 
-func (c *defaultRouteCollector) PATCH(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodPatch, pattern, h)
+func (rc *routeCollectorImpl) POST(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodPost, pattern, h)
 }
 
-func (c *defaultRouteCollector) POST(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodPost, pattern, h)
+func (rc *routeCollectorImpl) PUT(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodPut, pattern, h)
 }
 
-func (c *defaultRouteCollector) PUT(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodPut, pattern, h)
+func (rc *routeCollectorImpl) TRACE(pattern string, h HandlerFunc) Route {
+	return rc.Handle(http.MethodTrace, pattern, h)
 }
 
-func (c *defaultRouteCollector) TRACE(pattern string, h HandlerFunc) Route {
-	return c.method(http.MethodTrace, pattern, h)
+func (rc *routeCollectorImpl) Handle(method string, pattern string, h HandlerFunc) Route {
+	return rc.Some([]string{method}, pattern, h)
 }
 
-func (c *defaultRouteCollector) Static(prefix, root string) Route {
-	return c.GET(prefix+"*", StaticDirectoryHandler(root, false))
+func (rc *routeCollectorImpl) Static(prefix, root string) Route {
+	return rc.GET(prefix+"*", StaticDirectoryHandler(root, false))
 }
 
-func (c *defaultRouteCollector) File(pattern, file string) Route {
-	return c.GET(pattern, func(c Context) error { return c.File(file) })
+func (rc *routeCollectorImpl) File(pattern, file string) Route {
+	return rc.GET(pattern, func(c Context) error { return c.File(file) })
 }
 
 // StaticDirectoryHandler creates handler function to serve files from given a root path
@@ -622,7 +694,7 @@ func StaticDirectoryHandler(root string, disablePathUnescaping bool) HandlerFunc
 	}
 }
 
-type defaultRoute struct {
+type routeImpl struct {
 	id         uint32
 	name       string
 	collector  RouteCollector
@@ -633,30 +705,26 @@ type defaultRoute struct {
 	middleware []MiddlewareFunc
 }
 
-func (r *defaultRoute) SetName(name string) Route {
-	r.name = name
-	return r
-}
-func (r *defaultRoute) Use(middleware ...MiddlewareFunc) Route {
+func (r *routeImpl) SetName(name string) { r.name = name }
+func (r *routeImpl) Use(middleware ...MiddlewareFunc) {
 	r.middleware = append(r.middleware, middleware...)
-	return r
 }
-func (r *defaultRoute) ID() uint32                   { return r.id }
-func (r *defaultRoute) Router() Router               { return r.collector.Router() }
-func (r *defaultRoute) Collector() RouteCollector    { return r.collector }
-func (r *defaultRoute) Name() string                 { return r.name }
-func (r *defaultRoute) Pattern() string              { return r.pattern }
-func (r *defaultRoute) Methods() []string            { return r.methods[:] }
-func (r *defaultRoute) Handler() HandlerFunc         { return r.handler }
-func (r *defaultRoute) Params() []string             { return r.params[:] }
-func (r *defaultRoute) Middleware() []MiddlewareFunc { return r.middleware[:] }
-func (r *defaultRoute) Compose() MiddlewareFunc      { return Compose(r.middleware...) }
-func (r *defaultRoute) ToRouteInfo() RouteInfo       { return r }
-func (r *defaultRoute) Remove() {
+func (r *routeImpl) ID() uint32                   { return r.id }
+func (r *routeImpl) Router() Router               { return r.collector.Router() }
+func (r *routeImpl) Collector() RouteCollector    { return r.collector }
+func (r *routeImpl) Name() string                 { return r.name }
+func (r *routeImpl) Pattern() string              { return r.pattern }
+func (r *routeImpl) Methods() []string            { return r.methods[:] }
+func (r *routeImpl) Handler() HandlerFunc         { return r.handler }
+func (r *routeImpl) Params() []string             { return r.params[:] }
+func (r *routeImpl) Middleware() []MiddlewareFunc { return r.middleware[:] }
+func (r *routeImpl) Compose() MiddlewareFunc      { return Compose(r.middleware...) }
+func (r *routeImpl) RouteInfo() RouteInfo         { return r }
+func (r *routeImpl) Remove() {
 	router := r.Router()
-	if x, ok := router.(*defaultRouter); ok {
+	if x, ok := router.(*routerImpl); ok {
 		x.routes = slices.DeleteFunc(x.routes, func(route Route) bool {
-			return route.(*defaultRoute).id == r.id
+			return route.(*routeImpl).id == r.id
 		})
 	} else {
 		// 为自定义路由器提供移除子路由的预留接口
@@ -665,7 +733,7 @@ func (r *defaultRoute) Remove() {
 		}
 	}
 }
-func (r *defaultRoute) Reverse(params ...any) string {
+func (r *routeImpl) Reverse(params ...any) string {
 	uri := new(bytes.Buffer)
 	ln := len(params)
 	n := 0
@@ -683,4 +751,10 @@ func (r *defaultRoute) Reverse(params ...any) string {
 		}
 	}
 	return uri.String()
+}
+func (r *routeImpl) String() string {
+	if r.name != "" {
+		return fmt.Sprintf("%s (%s)", r.name, r.pattern)
+	}
+	return r.pattern
 }

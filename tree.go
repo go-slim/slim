@@ -2,16 +2,17 @@ package slim
 
 import "slices"
 
+// nodeTyp 节点类型
 type nodeTyp uint8
 
 const (
-	nStatic nodeTyp = iota // /home
-	nParam                 // /:user
-	nAny                   // /*param
+	ntStatic nodeTyp = iota // /home
+	ntParam                 // /:user
+	ntAny                   // /*param
 
 	pathSeparator = '/'
-	paramLabel    = byte(':')
-	anyLabel      = byte('*')
+	paramLabel    = ':'
+	anyLabel      = '*'
 )
 
 // split 以 `/` 作为分隔字符分割路由表达式，自动剔除多余的分隔字符。
@@ -50,8 +51,10 @@ func split(s string) ([]string, bool) {
 
 // leaf 节点叶子
 type leaf struct {
-	endpoints   endpoints // 对应不同的路由
-	paramsCount int       // 参数数量
+	// endpoints 服务端点，对应不同的路由
+	endpoints endpoints
+	// paramsCount 参数数量
+	paramsCount int
 }
 
 // endpoint 通过方法查找提供服务的端点
@@ -91,27 +94,38 @@ type endpoints []*endpoint
 
 func (e endpoints) Len() int           { return len(e) }
 func (e endpoints) Swap(i, j int)      { e[i], e[j] = e[j], e[i] }
-func (e endpoints) Less(i, j int) bool { return e[i].method > e[j].method }
+func (e endpoints) Less(i, j int) bool { return e[i].method < e[j].method }
 
 // node 路由节点
+// 基于路径分割符的前缀树
 type node struct {
-	typ            nodeTyp // 节点类型
-	parent         *node   // 上级节点
-	segment        string  // 节点表达式，为静态节点时有效
-	leaf           *leaf   // 节点叶子
-	leafCount      int     // 叶子数量
-	staticChildren []*node // 静态子节点
-	paramChild     *node   // 参数子节点
-	anyChild       *node   // 通配子节点
+	// typ 节点类型
+	typ nodeTyp
+	// parent 上级节点
+	parent *node
+	// segment 节点表达式，为静态节点时有效
+	segment string
+	// leaf 节点叶子
+	leaf *leaf
+	// leafCount 叶子数量
+	// 统计经由当前节点及其散发的子节点上的叶子节点数量，
+	// 当数量归零时，表示这个节点及其子节点已经失去了提供
+	// 服务的能力，此时，我们就可以删除它不会产生副作用。
+	leafCount int
+	// staticChildren 静态子节点
+	staticChildren []*node
+	// paramChild 参数子节点
+	paramChild *node
+	//  通配子节点
+	anyChild *node
 }
 
 // insert 插入子节点
 // 第一个返回值表示能够提供端点服务的节点；
-// 第二个返回值表示是否新增叶子。
+// 第二个返回值表示是否新增叶子节点。
 func (n *node) insert(segments []string, params *[]string, depth int) (tail *node, ok bool) {
 	if depth == len(segments) {
 		if n.leaf == nil {
-			//n.leaf = &leaf{paramsCount: paramsCount}
 			n.leaf = &leaf{paramsCount: len(*params)}
 			n.leafCount++
 			ok = true
@@ -119,32 +133,26 @@ func (n *node) insert(segments []string, params *[]string, depth int) (tail *nod
 		tail = n
 		return
 	}
+
 	var child *node
 	var param string
 	segment := segments[depth]
 	switch segment[1] {
 	case paramLabel:
-		//paramsCount++
 		param = segment[2:]
-		if param == "" {
-			// TODO(hupeh): 判断 param 是否符合规范
-		}
 		if n.paramChild == nil {
-			child = &node{typ: nParam, parent: n}
+			child = &node{typ: ntParam, parent: n}
 			n.paramChild = child
 		} else {
 			child = n.paramChild
 		}
 	case anyLabel:
-		//paramsCount++
 		param = segment[2:]
 		if param == "" {
 			param = "*"
-		} else {
-			// TODO(hupeh): 判断 param 是否符合规范
 		}
 		if n.anyChild == nil {
-			child = &node{typ: nAny, parent: n}
+			child = &node{typ: ntAny, parent: n}
 			n.anyChild = child
 		} else {
 			child = n.anyChild
@@ -157,7 +165,7 @@ func (n *node) insert(segments []string, params *[]string, depth int) (tail *nod
 			}
 		}
 		if child == nil {
-			child = &node{typ: nStatic, parent: n, segment: segment}
+			child = &node{typ: ntStatic, parent: n, segment: segment}
 			n.staticChildren = append(n.staticChildren, child)
 		}
 	}
@@ -180,7 +188,7 @@ func (n *node) match(segments []string, depth int) *node {
 		return n
 	}
 	segment := segments[depth]
-	// 静态节点优先
+	// 静态节点优先级最高
 	for _, child := range n.staticChildren {
 		if child.segment == segment {
 			result := child.match(segments, depth+1)
@@ -189,26 +197,21 @@ func (n *node) match(segments []string, depth int) *node {
 			}
 		}
 	}
-	// 参数节点次之
+	// 其次是参数节点
 	if n.paramChild != nil {
 		result := n.paramChild.match(segments, depth+1)
 		if result != nil {
 			return result
 		}
 	}
-	// 最后时通配节点
-	if n.anyChild != nil {
-		result := n.anyChild.match(segments, depth+1)
-		if result != nil {
-			return result
-		}
-	}
-	return nil
+	// 通配节点没有子节点，所以我们
+	// 走到了终点站，直接返回它就行了。
+	return n.anyChild
 }
 
 // remove 移除服务端点
 // 如果参数 methods 为空，表示移除节点叶子上的所有服务端点。
-// 第一个返回值表示被移除端点关联的路由编号；
+// 第一个返回值是被移除端点关联的路由编号；
 // 第二个返回值表示是否有端点被移除成功。
 func (n *node) remove(
 	methods []string,
@@ -229,6 +232,7 @@ func (n *node) remove(
 	}()
 
 	if len(segments) == depth {
+		// 只有叶子节点才提供端点服务
 		if n.leaf == nil {
 			return
 		}
@@ -256,6 +260,7 @@ func (n *node) remove(
 		}
 		return
 	}
+
 	segment := segments[depth]
 	switch segment[1] {
 	case paramLabel:

@@ -1,4 +1,4 @@
-package slim
+package nego
 
 import (
 	"fmt"
@@ -9,6 +9,84 @@ import (
 	"strings"
 
 	"golang.org/x/sync/singleflight"
+)
+
+// MIME types
+const (
+	MIMEApplicationJSON                  = "application/json"
+	MIMEApplicationJSONCharsetUTF8       = "application/json; charset=UTF-8"
+	MIMEApplicationJavaScript            = "application/javascript"
+	MIMEApplicationJavaScriptCharsetUTF8 = "application/javascript; charset=UTF-8"
+	MIMEApplicationXML                   = "application/xml"
+	MIMEApplicationXMLCharsetUTF8        = "application/xml; charset=UTF-8"
+	MIMETextXML                          = "text/xml"
+	MIMETextXMLCharsetUTF8               = "text/xml; charset=UTF-8"
+	MIMEApplicationForm                  = "application/x-www-form-urlencoded"
+	MIMEApplicationProtobuf              = "application/protobuf"
+	MIMEApplicationMsgpack               = "application/msgpack"
+	MIMETextHTML                         = "text/html"
+	MIMETextHTMLCharsetUTF8              = "text/html; charset=UTF-8"
+	MIMETextPlain                        = "text/plain"
+	MIMETextPlainCharsetUTF8             = "text/plain; charset=UTF-8"
+	MIMEMultipartForm                    = "multipart/form-data"
+	MIMEOctetStream                      = "application/octet-stream"
+)
+
+// Headers
+const (
+	HeaderAccept         = "Accept"
+	HeaderAcceptCharset  = "Accept-Charset"
+	HeaderAcceptEncoding = "Accept-Encoding"
+	HeaderAcceptLanguage = "Accept-Language"
+	// HeaderAllow is the name of the "Allow" header field used to list the set of methods
+	// advertised as supported by the target resource. Returning an Allow header is mandatory
+	// for status 405 (method not found) and useful for the OPTIONS method in responses.
+	// See RFC 7231: https://datatracker.ietf.org/doc/html/rfc7231#section-7.4.1
+	HeaderAllow               = "Allow"
+	HeaderAuthorization       = "Authorization"
+	HeaderContentDisposition  = "Content-Disposition"
+	HeaderContentEncoding     = "Content-Encoding"
+	HeaderContentLength       = "Content-Length"
+	HeaderContentType         = "Content-Type"
+	HeaderCookie              = "Cookie"
+	HeaderSetCookie           = "Set-Cookie"
+	HeaderIfModifiedSince     = "If-Modified-Since"
+	HeaderLastModified        = "Last-Modified"
+	HeaderLocation            = "Location"
+	HeaderUpgrade             = "Upgrade"
+	HeaderVary                = "Vary"
+	HeaderWWWAuthenticate     = "WWW-Authenticate"
+	HeaderXForwardedFor       = "X-Forwarded-For"
+	HeaderXForwardedProto     = "X-Forwarded-Proto"
+	HeaderXForwardedProtocol  = "X-Forwarded-Protocol"
+	HeaderXForwardedSsl       = "X-Forwarded-Ssl"
+	HeaderXUrlScheme          = "X-Url-Scheme"
+	HeaderXHTTPMethodOverride = "X-HTTP-Method-Override"
+	HeaderXRealIP             = "X-Real-IP"
+	HeaderXRequestID          = "X-Request-ID"
+	HeaderXRequestedWith      = "X-Requested-With"
+	HeaderServer              = "Server"
+	HeaderOrigin              = "Origin"
+	HeaderCacheControl        = "Cache-Control"
+	HeaderConnection          = "Connection"
+
+	HeaderAccessControlRequestMethod    = "Access-Control-Request-Method"
+	HeaderAccessControlRequestHeaders   = "Access-Control-Request-Headers"
+	HeaderAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	HeaderAccessControlAllowMethods     = "Access-Control-Allow-Methods"
+	HeaderAccessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	HeaderAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
+	HeaderAccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+	HeaderAccessControlMaxAge           = "Access-Control-Max-Age"
+
+	HeaderStrictTransportSecurity         = "Strict-Transport-Security"
+	HeaderXContentTypeOptions             = "X-Content-Type-Config"
+	HeaderXXSSProtection                  = "X-XSS-Protection"
+	HeaderXFrameOptions                   = "X-Frame-Config"
+	HeaderContentSecurityPolicy           = "Content-Security-Policy"
+	HeaderContentSecurityPolicyReportOnly = "Content-Security-Policy-Report-Only"
+	HeaderXCSRFToken                      = "X-CSRF-Token"
+	HeaderReferrerPolicy                  = "Referrer-Policy"
 )
 
 type cache struct {
@@ -31,7 +109,8 @@ type Negotiator struct {
 	sfg singleflight.Group
 }
 
-func NewNegotiator(capacity int, onParse func(accept *Accept)) *Negotiator {
+// New 返回内容协商器实例
+func New(capacity int, onParse func(accept *Accept)) *Negotiator {
 	if capacity <= 0 {
 		capacity = 10
 	}
@@ -79,15 +158,15 @@ func (n *Negotiator) parse(header string) AcceptSlice {
 }
 
 func (n *Negotiator) Charset(r *http.Request, charsets ...string) string {
-	return n.Accepts(r.Header.Get("Accept-Charset"), charsets...)
+	return n.Accepts(r.Header.Get(HeaderAcceptCharset), charsets...)
 }
 
 func (n *Negotiator) Encoding(r *http.Request, encodings ...string) string {
-	return n.Accepts(r.Header.Get("Accept-Encoding"), encodings...)
+	return n.Accepts(r.Header.Get(HeaderAcceptEncoding), encodings...)
 }
 
 func (n *Negotiator) Language(r *http.Request, languages ...string) string {
-	return n.Accepts(r.Header.Get("Accept-Language"), languages...)
+	return n.Accepts(r.Header.Get(HeaderAcceptLanguage), languages...)
 }
 
 func (n *Negotiator) Type(r *http.Request, types ...string) string {
@@ -123,7 +202,7 @@ func (n *Negotiator) Type(r *http.Request, types ...string) string {
 			ctypes = append(ctypes, typ[:])
 		}
 	}
-	s := n.Slice(r.Header.Get("Accept"))
+	s := n.Slice(r.Header.Get(HeaderAccept))
 	_, i, _ := s.Negotiate(ctypes...)
 	if i > -1 {
 		return keys[i]
@@ -299,7 +378,7 @@ func parseMediaRange(mediaRange string) (rangeParams, typeSubtype []string, err 
 	typeSubtype = strings.Split(rangeParams[0], "/")
 	// typeSubtype should have a length of exactly two.
 	if len(typeSubtype) > 2 {
-		err = fmt.Errorf("slim: invalid accept type '%s'", rangeParams[0])
+		err = fmt.Errorf("slim/nego: invalid accept type '%s'", rangeParams[0])
 		return
 	} else {
 		typeSubtype = append(typeSubtype, "*")

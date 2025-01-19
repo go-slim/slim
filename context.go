@@ -2,12 +2,13 @@ package slim
 
 import (
 	"bytes"
-	stdctx "context"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -17,36 +18,38 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"zestack.dev/slim/nego"
 )
 
-// Context represents the context of the current HTTP request. It holds request and
-// response objects, path, path parameters, data and registered handler.
+// Context 网络请求上下文，包含了请求数据（路径、路径参数、载荷）
+// 和响应对象以及已注册的处理程序等。
 type Context interface {
-	stdctx.Context
-	Context() stdctx.Context
-	// Request returns `*http.Request`.
-	// 返回当前请求的 `*http.Request` 结构体实例。
+	// Context 实现 context.Context 接口
+	context.Context
+	// Request 返回当前请求的 `*http.Request` 结构体实例
 	Request() *http.Request
-	// SetRequest sets `*http.Request`.
-	// 设置 `*http.Request` 结构体实例。
+	// SetRequest 为上下文设置新的 `*http.Request` 结构体实例。
 	SetRequest(r *http.Request)
-	// Response returns `slim.ResponseWriter`.
+	// Response 返回当前请求的 `http.ResponseWriter` 接口实现
 	Response() ResponseWriter
-	// SetResponse sets `slim.ResponseWriter`.
+	// SetResponse 为上下文设置新的 `http.ResponseWriter` 实现
 	SetResponse(r ResponseWriter)
 	// Logger returns the `Logger` instance.
-	Logger() *Logger
+	Logger() *log.Logger
 	// SetLogger Set the logger
-	SetLogger(logger *Logger)
+	SetLogger(logger *log.Logger)
 	// Filesystem returns `fs.FS`.
 	Filesystem() fs.FS
 	// SetFilesystem sets `fs.FS`
 	SetFilesystem(fs.FS)
-	// IsTLS returns true if HTTP connection is TLS otherwise false.
+	// IsTLS 判断 HTTP 连接是否采用了 Transport Layer Security (TLS) 协议，
+	// 如果是返回 true，否则返回 false。
 	IsTLS() bool
-	// IsWebSocket returns true if HTTP connection is WebSocket otherwise false.
+	// IsWebSocket 判断 HTTP 连接是否为 WebSocket 协议，如果
+	// 是就返回 true，否则返回 false。
 	IsWebSocket() bool
-	// Scheme returns the HTTP protocol scheme, `http` or `https`.
+	// Scheme 获取 HTTP 请求的协议方案，返回值为 `http` 或者 `https`
 	Scheme() string
 	// RealIP returns the client's network address based on `X-Forwarded-For`
 	// or `X-Real-IP` request header.
@@ -72,7 +75,7 @@ type Context interface {
 	// * method not allowed - path had routes registered but for other method types then current request is
 	// * unknown - initial state for fresh context before router tries to do routing
 	//
-	// Note: for pre-middleware (Mux.Use) this method result is always RouteMatchUnknown as at point router has not tried
+	// Note: for slim-middleware (Slim.Use) this method result is always RouteMatchUnknown as at point router has not tried
 	// to match request to route.
 	RouteMatchType() RouteMatchType
 	// RouteInfo returns current request route information. Method, Path, Name and params if they exist for matched route.
@@ -184,13 +187,13 @@ type EditableContext interface {
 	Reset(w http.ResponseWriter, r *http.Request)
 }
 
-var _ EditableContext = &context{}
+var _ EditableContext = &contextImpl{}
 
 type BytesGetter interface {
 	Bytes() []byte
 }
 
-type context struct {
+type contextImpl struct {
 	request       *http.Request
 	response      ResponseWriter
 	matchType     RouteMatchType
@@ -203,19 +206,58 @@ type context struct {
 	// currentParams hold path parameters set by non-Slim implementation (custom middlewares, handlers) during the lifetime of Request.
 	// Lifecycle is not handle by Slim and could have excess allocations per served Request
 	currentParams PathParams
-	negotiator    *Negotiator
-	logger        *Logger
+	negotiator    *nego.Negotiator
+	logger        *log.Logger
 	query         url.Values
 	store         map[string]any
 	slim          *Slim
 	mu            sync.RWMutex
 }
 
+func (x *contextImpl) Deadline() (deadline time.Time, ok bool) {
+	return x.request.Context().Deadline()
+}
+
+func (x *contextImpl) Done() <-chan struct{} {
+	return x.request.Context().Done()
+}
+
+func (x *contextImpl) Err() error {
+	return x.request.Context().Err()
+}
+
+func (x *contextImpl) Value(key any) any {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+
+	if k, ok := key.(*contextKey); ok {
+		switch k.name {
+		case SlimContextKey.name:
+			return x.slim
+		case RequestContextKey.name:
+			return x.request
+		case ResponseContextKey.name:
+			return x.response
+		case ContextKey.name:
+			return x
+		}
+	}
+
+	if ks, ok := key.(string); ok {
+		value, has := x.store[ks]
+		if has {
+			return value
+		}
+	}
+
+	return x.request.Context().Value(key)
+}
+
 // Reset resets the context after request completes. It must be called along
 // with `Slim.AcquireContext()` and `Slim.ReleaseContext()`.
 // See `Slim.ServeHTTP()`
-func (x *context) Reset(w http.ResponseWriter, r *http.Request) {
-	x.request = r
+func (x *contextImpl) Reset(w http.ResponseWriter, r *http.Request) {
+	x.request = x.wrap(r)
 	x.response = NewResponseWriter(r.Method, w) // todo x.response.reset
 	x.matchType = RouteMatchUnknown
 	x.allowsMethods = x.allowsMethods[:0]
@@ -229,31 +271,34 @@ func (x *context) Reset(w http.ResponseWriter, r *http.Request) {
 	x.store = nil
 }
 
-func (x *context) Context() stdctx.Context {
-	return x.request.Context()
-}
-
 // Request returns `*http.Request`.
-func (x *context) Request() *http.Request {
+func (x *contextImpl) Request() *http.Request {
 	return x.request
 }
 
 // SetRequest sets `*http.Request`.
-func (x *context) SetRequest(r *http.Request) {
-	x.request = r
+func (x *contextImpl) SetRequest(r *http.Request) {
+	x.request = x.wrap(r)
 }
 
-// Response returns `mux.ResponseWriter`.
-func (x *context) Response() ResponseWriter {
+func (x *contextImpl) wrap(r *http.Request) *http.Request {
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, SlimContextKey, x.slim)
+	ctx = context.WithValue(ctx, ContextKey, x)
+	return r.WithContext(ctx)
+}
+
+// Response returns `slim.ResponseWriter`.
+func (x *contextImpl) Response() ResponseWriter {
 	return x.response
 }
 
-// SetResponse sets `mux.ResponseWriter`.
-func (x *context) SetResponse(w ResponseWriter) {
+// SetResponse sets `slim.ResponseWriter`.
+func (x *contextImpl) SetResponse(w ResponseWriter) {
 	x.response = w
 }
 
-func (x *context) Logger() *Logger {
+func (x *contextImpl) Logger() *log.Logger {
 	if x.logger != nil {
 		return x.logger
 	}
@@ -263,12 +308,12 @@ func (x *context) Logger() *Logger {
 	return x.slim.Logger
 }
 
-func (x *context) SetLogger(l *Logger) {
+func (x *contextImpl) SetLogger(l *log.Logger) {
 	x.logger = l
 }
 
 // Filesystem returns `fs.FS`.
-func (x *context) Filesystem() fs.FS {
+func (x *contextImpl) Filesystem() fs.FS {
 	if x.filesystem != nil {
 		return x.filesystem
 	}
@@ -276,91 +321,96 @@ func (x *context) Filesystem() fs.FS {
 }
 
 // SetFilesystem sets `fs.FS`
-func (x *context) SetFilesystem(filesystem fs.FS) {
+func (x *contextImpl) SetFilesystem(filesystem fs.FS) {
 	x.filesystem = filesystem
 }
 
 // IsTLS returns true if HTTP connection is TLS otherwise false.
-func (x *context) IsTLS() bool {
+func (x *contextImpl) IsTLS() bool {
 	return x.request.TLS != nil
 }
 
 // IsWebSocket returns true if HTTP connection is WebSocket otherwise false.
-func (x *context) IsWebSocket() bool {
-	upgrade := x.request.Header.Get(HeaderUpgrade)
+func (x *contextImpl) IsWebSocket() bool {
+	upgrade := x.request.Header.Get(nego.HeaderUpgrade)
 	return strings.EqualFold(upgrade, "websocket")
 }
 
-func (x *context) Scheme() string {
+func (x *contextImpl) Scheme() string {
 	// Can't use `r.Request.URL.Scheme`
 	// See: https://groups.google.com/forum/#!topic/golang-nuts/pMUkBlQBDF0
 	if x.IsTLS() {
 		return "https"
 	}
-	if scheme := x.request.Header.Get(HeaderXForwardedProto); scheme != "" {
+	if scheme := x.request.Header.Get(nego.HeaderXForwardedProto); scheme != "" {
 		return scheme
 	}
-	if scheme := x.request.Header.Get(HeaderXForwardedProtocol); scheme != "" {
+	if scheme := x.request.Header.Get(nego.HeaderXForwardedProtocol); scheme != "" {
 		return scheme
 	}
-	if ssl := x.request.Header.Get(HeaderXForwardedSsl); ssl == "on" {
+	if ssl := x.request.Header.Get(nego.HeaderXForwardedSsl); ssl == "on" {
 		return "https"
 	}
-	if scheme := x.request.Header.Get(HeaderXUrlScheme); scheme != "" {
+	if scheme := x.request.Header.Get(nego.HeaderXUrlScheme); scheme != "" {
 		return scheme
 	}
 	return "http"
 }
 
-func (x *context) RealIP() string {
-	//if x.slim != nil && x.slim.IPExtractor != nil {
-	//	return x.slim.IPExtractor(x.request)
-	//}
+func (x *contextImpl) RealIP() string {
+	if x.slim.IPExtractor != nil {
+		return x.slim.IPExtractor(x.request)
+	}
 	// Fall back to legacy behavior
-	if ip := x.request.Header.Get(HeaderXForwardedFor); ip != "" {
+	if ip := x.request.Header.Get(nego.HeaderXForwardedFor); ip != "" {
 		i := strings.IndexAny(ip, ",")
 		if i > 0 {
-			return strings.TrimSpace(ip[:i])
+			xffip := strings.TrimSpace(ip[:i])
+			xffip = strings.TrimPrefix(xffip, "[")
+			xffip = strings.TrimSuffix(xffip, "]")
+			return xffip
 		}
 		return ip
 	}
-	if ip := x.request.Header.Get(HeaderXRealIP); ip != "" {
+	if ip := x.request.Header.Get(nego.HeaderXRealIP); ip != "" {
+		ip = strings.TrimPrefix(ip, "[")
+		ip = strings.TrimSuffix(ip, "]")
 		return ip
 	}
 	ra, _, _ := net.SplitHostPort(x.request.RemoteAddr)
 	return ra
 }
 
-func (x *context) RequestURI() string {
+func (x *contextImpl) RequestURI() string {
 	return x.request.RequestURI
 }
 
-func (x *context) Is(types ...string) string {
-	typ, _ := typeis(x.Header("Content-Type"), types...)
+func (x *contextImpl) Is(types ...string) string {
+	typ, _ := nego.TypeIs(x.Header("Content-Type"), types...)
 	return typ
 }
 
-func (x *context) Accepts(expect ...string) string {
+func (x *contextImpl) Accepts(expect ...string) string {
 	return x.slim.negotiator.Type(x.request, expect...)
 }
 
-func (x *context) AcceptsEncodings(encodings ...string) string {
+func (x *contextImpl) AcceptsEncodings(encodings ...string) string {
 	return x.slim.negotiator.Encoding(x.request, encodings...)
 }
 
-func (x *context) AcceptsCharsets(charsets ...string) string {
+func (x *contextImpl) AcceptsCharsets(charsets ...string) string {
 	return x.slim.negotiator.Charset(x.request, charsets...)
 }
 
-func (x *context) AcceptsLanguages(languages ...string) string {
+func (x *contextImpl) AcceptsLanguages(languages ...string) string {
 	return x.slim.negotiator.Language(x.request, languages...)
 }
 
-func (x *context) AllowsMethods() []string {
+func (x *contextImpl) AllowsMethods() []string {
 	return x.allowsMethods[:]
 }
 
-func (x *context) SetAllowsMethods(methods []string) {
+func (x *contextImpl) SetAllowsMethods(methods []string) {
 	x.allowsMethods = methods
 }
 
@@ -370,39 +420,39 @@ func (x *context) SetAllowsMethods(methods []string) {
 // * not found - this path did not match any routes enough to be considered match
 // * method not allowed - path had routes registered but for other method types then current request is
 // * unknown - initial state for fresh context before router tries to do routing
-func (x *context) RouteMatchType() RouteMatchType {
+func (x *contextImpl) RouteMatchType() RouteMatchType {
 	return x.matchType
 }
 
 // SetRouteMatchType sets the RouteMatchType of router match for this request.
-func (x *context) SetRouteMatchType(t RouteMatchType) {
+func (x *contextImpl) SetRouteMatchType(t RouteMatchType) {
 	x.matchType = t
 }
 
 // RouteInfo returns current request route information. Method, Path, Name and params if they exist for matched route.
 // In the case of 404 (route not found) and 405 (method not allowed) RouteInfo returns generic struct for these cases.
-func (x *context) RouteInfo() RouteInfo {
+func (x *contextImpl) RouteInfo() RouteInfo {
 	return x.route
 }
 
 // SetRouteInfo sets the route info of this request to the context.
-func (x *context) SetRouteInfo(ri RouteInfo) {
+func (x *contextImpl) SetRouteInfo(ri RouteInfo) {
 	x.route = ri
 }
 
 // RawPathParams returns raw path pathParams value.
-func (x *context) RawPathParams() *PathParams {
+func (x *contextImpl) RawPathParams() *PathParams {
 	return x.pathParams
 }
 
 // SetRawPathParams replaces any existing param values with new values for this context lifetime (request).
-func (x *context) SetRawPathParams(params *PathParams) {
+func (x *contextImpl) SetRawPathParams(params *PathParams) {
 	x.pathParams = params
 }
 
 // PathParam returns the corresponding path parameter value from the request
 // routing context.
-func (x *context) PathParam(name string) string {
+func (x *contextImpl) PathParam(name string) string {
 	if x.currentParams != nil {
 		return x.currentParams.Get(name, "")
 	}
@@ -410,7 +460,7 @@ func (x *context) PathParam(name string) string {
 }
 
 // PathParams returns path parameter values.
-func (x *context) PathParams() PathParams {
+func (x *contextImpl) PathParams() PathParams {
 	if x.currentParams != nil {
 		return x.currentParams
 	}
@@ -420,31 +470,31 @@ func (x *context) PathParams() PathParams {
 }
 
 // SetPathParams set path parameter for during current request lifecycle.
-func (x *context) SetPathParams(params PathParams) {
+func (x *contextImpl) SetPathParams(params PathParams) {
 	x.currentParams = params
 }
 
-func (x *context) QueryParam(name string) string {
+func (x *contextImpl) QueryParam(name string) string {
 	return x.QueryParams().Get(name)
 }
 
-func (x *context) QueryParams() url.Values {
+func (x *contextImpl) QueryParams() url.Values {
 	if x.query == nil {
 		x.query = x.request.URL.Query()
 	}
 	return x.query
 }
 
-func (x *context) QueryString() string {
+func (x *contextImpl) QueryString() string {
 	return x.request.URL.RawQuery
 }
 
-func (x *context) FormValue(name string) string {
+func (x *contextImpl) FormValue(name string) string {
 	return x.request.FormValue(name)
 }
 
-func (x *context) FormParams() (url.Values, error) {
-	if strings.HasPrefix(x.request.Header.Get(HeaderContentType), MIMEMultipartForm) {
+func (x *contextImpl) FormParams() (url.Values, error) {
+	if strings.HasPrefix(x.request.Header.Get(nego.HeaderContentType), nego.MIMEMultipartForm) {
 		err := x.request.ParseMultipartForm(x.slim.MultipartMemoryLimit)
 		if err != nil {
 			return nil, err
@@ -458,27 +508,25 @@ func (x *context) FormParams() (url.Values, error) {
 	return x.request.Form, nil
 }
 
-func (x *context) FormFile(name string) (*multipart.FileHeader, error) {
+func (x *contextImpl) FormFile(name string) (*multipart.FileHeader, error) {
 	f, fh, err := x.request.FormFile(name)
 	if err != nil {
 		return nil, err
 	}
-	if err = f.Close(); err != nil {
-		// TODO(hupeh): logging the error
-	}
+	f.Close()
 	return fh, nil
 }
 
-func (x *context) MultipartForm() (*multipart.Form, error) {
+func (x *contextImpl) MultipartForm() (*multipart.Form, error) {
 	err := x.request.ParseMultipartForm(x.slim.MultipartMemoryLimit)
 	return x.request.MultipartForm, err
 }
 
-func (x *context) Header(key string) string {
+func (x *contextImpl) Header(key string) string {
 	return x.request.Header.Get(key)
 }
 
-func (x *context) SetHeader(key string, values ...string) {
+func (x *contextImpl) SetHeader(key string, values ...string) {
 	header := x.response.Header()
 	for i, value := range values {
 		if i == 0 {
@@ -489,25 +537,25 @@ func (x *context) SetHeader(key string, values ...string) {
 	}
 }
 
-func (x *context) Cookie(name string) (*http.Cookie, error) {
+func (x *contextImpl) Cookie(name string) (*http.Cookie, error) {
 	return x.request.Cookie(name)
 }
 
-func (x *context) SetCookie(cookie *http.Cookie) {
+func (x *contextImpl) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(x.response, cookie)
 }
 
-func (x *context) Cookies() []*http.Cookie {
+func (x *contextImpl) Cookies() []*http.Cookie {
 	return x.request.Cookies()
 }
 
-func (x *context) Get(key string) any {
+func (x *contextImpl) Get(key string) any {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
 	return x.store[key]
 }
 
-func (x *context) Set(key string, val any) {
+func (x *contextImpl) Set(key string, val any) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if x.store == nil {
@@ -518,13 +566,13 @@ func (x *context) Set(key string, val any) {
 
 // Bind binds the request body into a provided type `i`. The default binder
 // does it based on Content-Type header.
-func (x *context) Bind(i any) error {
+func (x *contextImpl) Bind(i any) error {
 	return x.slim.Binder.Bind(x, i)
 }
 
 // Validate validates provided `i`. It is usually called after `Context#Bind()`.
 // Validator must be registered using `Slim#Validator`.
-func (x *context) Validate(i any) error {
+func (x *contextImpl) Validate(i any) error {
 	if x.slim.Validator == nil {
 		return ErrValidatorNotRegistered
 	}
@@ -532,20 +580,20 @@ func (x *context) Validate(i any) error {
 }
 
 // Written returns whether the context response has been written to
-func (x *context) Written() bool {
+func (x *contextImpl) Written() bool {
 	return x.response.Written()
 }
 
-func (x *context) writeContentType(value string) {
+func (x *contextImpl) writeContentType(value string) {
 	if value != "" {
 		header := x.response.Header()
-		if header.Get(HeaderContentType) == "" {
-			header.Set(HeaderContentType, value)
+		if header.Get(nego.HeaderContentType) == "" {
+			header.Set(nego.HeaderContentType, value)
 		}
 	}
 }
 
-func (x *context) prettyIndent() string {
+func (x *contextImpl) prettyIndent() string {
 	_, pretty := x.QueryParams()["pretty"]
 	if x.slim.Debug || pretty {
 		return x.slim.PrettyIndent
@@ -555,7 +603,7 @@ func (x *context) prettyIndent() string {
 
 // Render renders a template with data and sends a text/html response with status
 // code. Renderer must be registered using `Slim.Renderer`.
-func (x *context) Render(code int, name string, data any) error {
+func (x *contextImpl) Render(code int, name string, data any) error {
 	if x.slim.Renderer == nil {
 		return ErrRendererNotRegistered
 	}
@@ -568,41 +616,41 @@ func (x *context) Render(code int, name string, data any) error {
 }
 
 // HTML sends an HTTP response with status code.
-func (x *context) HTML(code int, html string) error {
+func (x *contextImpl) HTML(code int, html string) error {
 	return x.HTMLBlob(code, []byte(html))
 }
 
 // HTMLBlob sends an HTTP blob response with status code.
-func (x *context) HTMLBlob(code int, b []byte) error {
-	return x.Blob(code, MIMETextHTMLCharsetUTF8, b)
+func (x *contextImpl) HTMLBlob(code int, b []byte) error {
+	return x.Blob(code, nego.MIMETextHTMLCharsetUTF8, b)
 }
 
 // String sends a string response with status code.
-func (x *context) String(code int, s string) error {
-	return x.Blob(code, MIMETextPlainCharsetUTF8, []byte(s))
+func (x *contextImpl) String(code int, s string) error {
+	return x.Blob(code, nego.MIMETextPlainCharsetUTF8, []byte(s))
 }
 
 // JSON sends a JSON response with status code.
-func (x *context) JSON(code int, i any) error {
+func (x *contextImpl) JSON(code int, i any) error {
 	return x.JSONPretty(code, i, x.prettyIndent())
 }
 
 // JSONPretty sends a pretty-print JSON with status code.
-func (x *context) JSONPretty(code int, i any, indent string) error {
-	x.writeContentType(MIMEApplicationJSONCharsetUTF8)
+func (x *contextImpl) JSONPretty(code int, i any, indent string) error {
+	x.writeContentType(nego.MIMEApplicationJSONCharsetUTF8)
 	x.response.WriteHeader(code)
 	return x.slim.JSONSerializer.Serialize(x.response, i, indent)
 }
 
 // JSONBlob sends a JSON blob response with status code.
-func (x *context) JSONBlob(code int, b []byte) error {
-	return x.Blob(code, MIMEApplicationJSONCharsetUTF8, b)
+func (x *contextImpl) JSONBlob(code int, b []byte) error {
+	return x.Blob(code, nego.MIMEApplicationJSONCharsetUTF8, b)
 }
 
 // JSONP sends a JSONP response with status code. It uses `callback` to construct
 // the JSONP payload.
-func (x *context) JSONP(code int, callback string, i any) error {
-	x.writeContentType(MIMEApplicationJavaScriptCharsetUTF8)
+func (x *contextImpl) JSONP(code int, callback string, i any) error {
+	x.writeContentType(nego.MIMEApplicationJavaScriptCharsetUTF8)
 	x.response.WriteHeader(code)
 	if _, err := x.response.Write([]byte(callback + "(")); err != nil {
 		return err
@@ -618,8 +666,8 @@ func (x *context) JSONP(code int, callback string, i any) error {
 
 // JSONPBlob sends a JSONP blob response with status code. It uses `callback`
 // to construct the JSONP payload.
-func (x *context) JSONPBlob(code int, callback string, b []byte) error {
-	x.writeContentType(MIMEApplicationJavaScriptCharsetUTF8)
+func (x *contextImpl) JSONPBlob(code int, callback string, b []byte) error {
+	x.writeContentType(nego.MIMEApplicationJavaScriptCharsetUTF8)
 	x.response.WriteHeader(code)
 	if _, err := x.response.Write([]byte(callback + "(")); err != nil {
 		return err
@@ -632,13 +680,13 @@ func (x *context) JSONPBlob(code int, callback string, b []byte) error {
 }
 
 // XML sends an XML response with status code.
-func (x *context) XML(code int, i any) error {
+func (x *contextImpl) XML(code int, i any) error {
 	return x.XMLPretty(code, i, x.prettyIndent())
 }
 
 // XMLPretty sends a pretty-print XML with status code.
-func (x *context) XMLPretty(code int, i any, indent string) error {
-	x.writeContentType(MIMEApplicationXMLCharsetUTF8)
+func (x *contextImpl) XMLPretty(code int, i any, indent string) error {
+	x.writeContentType(nego.MIMEApplicationXMLCharsetUTF8)
 	x.response.WriteHeader(code)
 	if _, err := x.response.Write([]byte(xml.Header)); err != nil {
 		return err
@@ -647,8 +695,8 @@ func (x *context) XMLPretty(code int, i any, indent string) error {
 }
 
 // XMLBlob sends an XML blob response with status code.
-func (x *context) XMLBlob(code int, b []byte) error {
-	x.writeContentType(MIMEApplicationXMLCharsetUTF8)
+func (x *contextImpl) XMLBlob(code int, b []byte) error {
+	x.writeContentType(nego.MIMEApplicationXMLCharsetUTF8)
 	x.response.WriteHeader(code)
 	_, err := x.response.Write([]byte(xml.Header))
 	if err == nil {
@@ -658,7 +706,7 @@ func (x *context) XMLBlob(code int, b []byte) error {
 }
 
 // Blob sends a blob response with a status code and content type.
-func (x *context) Blob(code int, contentType string, b []byte) error {
+func (x *contextImpl) Blob(code int, contentType string, b []byte) error {
 	x.writeContentType(contentType)
 	x.response.WriteHeader(code)
 	_, err := x.response.Write(b)
@@ -666,7 +714,7 @@ func (x *context) Blob(code int, contentType string, b []byte) error {
 }
 
 // Stream sends a streaming response with status code and content type.
-func (x *context) Stream(code int, contentType string, r io.Reader) error {
+func (x *contextImpl) Stream(code int, contentType string, r io.Reader) error {
 	x.writeContentType(contentType)
 	x.response.WriteHeader(code)
 	_, err := io.Copy(x.response, r)
@@ -674,7 +722,7 @@ func (x *context) Stream(code int, contentType string, r io.Reader) error {
 }
 
 // The File sends a response with the content of the file.
-func (x *context) File(file string, filesystem ...fs.FS) error {
+func (x *contextImpl) File(file string, filesystem ...fs.FS) error {
 	var lfs fs.FS
 	for _, i := range filesystem {
 		if i != nil {
@@ -721,22 +769,22 @@ func (x *context) File(file string, filesystem ...fs.FS) error {
 }
 
 // Attachment sends a response as attachment, prompting a client to save the file.
-func (x *context) Attachment(file string, name string) error {
+func (x *contextImpl) Attachment(file string, name string) error {
 	return x.contentDisposition(file, name, "attachment")
 }
 
 // Inline sends a response as inline, opening the file in the browser.
-func (x *context) Inline(file string, name string) error {
+func (x *contextImpl) Inline(file string, name string) error {
 	return x.contentDisposition(file, name, "inline")
 }
 
-func (x *context) contentDisposition(file, name, dispositionType string) error {
-	x.SetHeader(HeaderContentDisposition, fmt.Sprintf("%s; filename=%q", dispositionType, name))
+func (x *contextImpl) contentDisposition(file, name, dispositionType string) error {
+	x.SetHeader(nego.HeaderContentDisposition, fmt.Sprintf("%s; filename=%q", dispositionType, name))
 	return x.File(file)
 }
 
 // NoContent sends a response with nobody and a status code.
-func (x *context) NoContent(code ...int) error {
+func (x *contextImpl) NoContent(code ...int) error {
 	for _, status := range code {
 		x.response.WriteHeader(status)
 		return nil
@@ -746,7 +794,7 @@ func (x *context) NoContent(code ...int) error {
 }
 
 // Redirect redirects the request to a provided URL with status code.
-func (x *context) Redirect(code int, location string) error {
+func (x *contextImpl) Redirect(code int, location string) error {
 	if code < 300 || code > 308 {
 		return ErrInvalidRedirectCode
 	}
@@ -756,47 +804,24 @@ func (x *context) Redirect(code int, location string) error {
 
 // Error invokes the registered HTTP error handler.
 // NB: Avoid using this method. It is better to return errors, so middlewares up in chain could act on returned error.
-func (x *context) Error(err error) {
+func (x *contextImpl) Error(err error) {
 	x.slim.ErrorHandler(x, err)
 }
 
-func (x *context) Slim() *Slim {
+func (x *contextImpl) Slim() *Slim {
 	return x.slim
 }
 
-func (x *context) Deadline() (deadline time.Time, ok bool) {
-	return x.Context().Deadline()
-}
-
-func (x *context) Done() <-chan struct{} {
-	return x.Context().Done()
-}
-
-func (x *context) Err() error {
-	return x.Context().Err()
-}
-
-func (x *context) Value(key any) any {
-	x.mu.RLock()
-	if ks, ok := key.(string); ok {
-		value, has := x.store[ks]
-		if has {
-			x.mu.RUnlock()
-			return value
-		}
-	}
-	x.mu.RUnlock()
-	return x.Context().Value(key)
-}
-
-// PathParams 路由参数
+// PathParams 路由参数列表
 type PathParams []PathParam
 
+// PathParam 路径参数
 type PathParam struct {
-	Name  string
-	Value string
+	Name  string // 参数名
+	Value string // 参数值
 }
 
+// Get 获取与 name 对应的值，若不存在，则返回提供的默认值
 func (p PathParams) Get(name string, defaultValue ...string) string {
 	if value, ok := p.Lookup(name); ok && value != "" {
 		return value
@@ -807,6 +832,8 @@ func (p PathParams) Get(name string, defaultValue ...string) string {
 	return ""
 }
 
+// Lookup 检查并返回参数值，
+// 第一个返回值是与 name 对应的值，第二个返回值表示是否存在。
 func (p PathParams) Lookup(name string) (string, bool) {
 	for _, param := range p {
 		if param.Name == name {

@@ -1,128 +1,22 @@
 package slim
 
 import (
-	stdctx "context"
-	"crypto/tls"
 	"errors"
-	"fmt"
-	"io"
 	"io/fs"
-	stdLog "log"
-	"log/slog"
-	"net"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
-	"time"
 
-	"golang.org/x/crypto/acme"
-	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-	"zestack.dev/color"
+	"zestack.dev/slim/nego"
+	"zestack.dev/slim/serde"
 )
 
-// MIME types
-const (
-	MIMEApplicationJSON                  = "application/json"
-	MIMEApplicationJSONCharsetUTF8       = "application/json; charset=UTF-8"
-	MIMEApplicationJavaScript            = "application/javascript"
-	MIMEApplicationJavaScriptCharsetUTF8 = "application/javascript; charset=UTF-8"
-	MIMEApplicationXML                   = "application/xml"
-	MIMEApplicationXMLCharsetUTF8        = "application/xml; charset=UTF-8"
-	MIMETextXML                          = "text/xml"
-	MIMETextXMLCharsetUTF8               = "text/xml; charset=UTF-8"
-	MIMEApplicationForm                  = "application/x-www-form-urlencoded"
-	MIMEApplicationProtobuf              = "application/protobuf"
-	MIMEApplicationMsgpack               = "application/msgpack"
-	MIMETextHTML                         = "text/html"
-	MIMETextHTMLCharsetUTF8              = "text/html; charset=UTF-8"
-	MIMETextPlain                        = "text/plain"
-	MIMETextPlainCharsetUTF8             = "text/plain; charset=UTF-8"
-	MIMEMultipartForm                    = "multipart/form-data"
-	MIMEOctetStream                      = "application/octet-stream"
-)
-
-// Headers
-const (
-	HeaderAccept         = "Accept"
-	HeaderAcceptEncoding = "Accept-Encoding"
-	// HeaderAllow is the name of the "Allow" header field used to list the set of methods
-	// advertised as supported by the target resource. Returning an Allow header is mandatory
-	// for status 405 (method not found) and useful for the OPTIONS method in responses.
-	// See RFC 7231: https://datatracker.ietf.org/doc/html/rfc7231#section-7.4.1
-	HeaderAllow               = "Allow"
-	HeaderAuthorization       = "Authorization"
-	HeaderContentDisposition  = "Content-Disposition"
-	HeaderContentEncoding     = "Content-Encoding"
-	HeaderContentLength       = "Content-Length"
-	HeaderContentType         = "Content-Type"
-	HeaderCookie              = "Cookie"
-	HeaderSetCookie           = "Set-Cookie"
-	HeaderIfModifiedSince     = "If-Modified-Since"
-	HeaderLastModified        = "Last-Modified"
-	HeaderLocation            = "Location"
-	HeaderUpgrade             = "Upgrade"
-	HeaderVary                = "Vary"
-	HeaderWWWAuthenticate     = "WWW-Authenticate"
-	HeaderXForwardedFor       = "X-Forwarded-For"
-	HeaderXForwardedProto     = "X-Forwarded-Proto"
-	HeaderXForwardedProtocol  = "X-Forwarded-Protocol"
-	HeaderXForwardedSsl       = "X-Forwarded-Ssl"
-	HeaderXUrlScheme          = "X-Url-Scheme"
-	HeaderXHTTPMethodOverride = "X-HTTP-Method-Override"
-	HeaderXRealIP             = "X-Real-IP"
-	HeaderXRequestID          = "X-Request-ID"
-	HeaderXRequestedWith      = "X-Requested-With"
-	HeaderServer              = "Server"
-	HeaderOrigin              = "Origin"
-	HeaderCacheControl        = "Cache-Control"
-	HeaderConnection          = "Connection"
-
-	HeaderAccessControlRequestMethod    = "Access-Control-Request-Method"
-	HeaderAccessControlRequestHeaders   = "Access-Control-Request-Headers"
-	HeaderAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
-	HeaderAccessControlAllowMethods     = "Access-Control-Allow-Methods"
-	HeaderAccessControlAllowHeaders     = "Access-Control-Allow-Headers"
-	HeaderAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
-	HeaderAccessControlExposeHeaders    = "Access-Control-Expose-Headers"
-	HeaderAccessControlMaxAge           = "Access-Control-Max-Age"
-
-	HeaderStrictTransportSecurity         = "Strict-Transport-Security"
-	HeaderXContentTypeOptions             = "X-Content-Type-Config"
-	HeaderXXSSProtection                  = "X-XSS-Protection"
-	HeaderXFrameOptions                   = "X-Frame-Config"
-	HeaderContentSecurityPolicy           = "Content-Security-Policy"
-	HeaderContentSecurityPolicyReportOnly = "Content-Security-Policy-Report-Only"
-	HeaderXCSRFToken                      = "X-CSRF-Token"
-	HeaderReferrerPolicy                  = "Referrer-Policy"
-)
-
-const (
-	Version = "0.0.1-dev"
-	website = "https://slim.zestack.com"
-	banner  = `
- .--,       .--,
-( (  \.---./  ) )
- '.__/o   o\__.'
-    {=  ^  =}
-     >  -  <
-_____________________________________________
-High performance, minimalist Go web framework
-version: %s
-website: %s
-_____________________________________________
-`
-)
-
-// HandlerFunc HTTP请求处理函数签名
+// HandlerFunc 网络请求处理函数签名
 type HandlerFunc func(c Context) error
 
-// ErrorHandlerFunc 错误处理函数签名
-type ErrorHandlerFunc func(c Context, err error)
-
-// MiddlewareFunc 请求中间件
+// MiddlewareFunc 请求中间件函数签名
 type MiddlewareFunc func(c Context, next HandlerFunc) error
 
 // MiddlewareRegistrar 中间件注册接口
@@ -139,14 +33,30 @@ type MiddlewareComposer interface {
 	Compose() MiddlewareFunc
 }
 
+// ErrorHandler 错误处理器接口
+type ErrorHandler interface {
+	// HandleError 处理错误
+	HandleError(c Context, err error)
+}
+
+// ErrorHandlerFunc 错误处理函数签名
+type ErrorHandlerFunc func(c Context, err error)
+
+// HandleError 实现 ErrorHandler 接口
+func (h ErrorHandlerFunc) HandleError(c Context, err error) {
+	h(c, err)
+}
+
+// ErrorHandlerRegistrar 错误处理器注册接口
+type ErrorHandlerRegistrar interface {
+	// UseErrorHandler 注册错误处理器
+	// 重复调用该方法会覆盖之前设置的错误处理器
+	UseErrorHandler(h ErrorHandler)
+}
+
 type MiddlewareConfigurator interface {
 	// ToMiddleware 将实例转换成中间件函数
 	ToMiddleware() MiddlewareFunc
-}
-
-// Renderer is the interface that wraps the Render function.
-type Renderer interface {
-	Render(c Context, w io.Writer, name string, data any) error
 }
 
 // Validator is the interface that wraps the Validate function.
@@ -154,48 +64,68 @@ type Validator interface {
 	Validate(i any) error
 }
 
+// IPExtractor is a function to extract IP addr from http.Request.
+// Set appropriate one to Slim.IPExtractor.
+type IPExtractor func(*http.Request) string
+
 // Map defines a generic map of type `map[string]any`.
 type Map map[string]any
 
-type Slim struct {
-	// startupMutex is mutex to lock Server instance access during server configuration and startup. Useful for to get
-	// listener address info (on which interface/port was listener bound) without having data races.
-	startupMutex sync.RWMutex
+type RouterCreator func(*Slim) Router
 
+// contextKey is a value for use with context.WithValue. It's used as
+// a pointer so it fits in an interface{} without allocation.
+type contextKey struct {
+	name string
+}
+
+func (k *contextKey) String() string {
+	return "slim context value " + k.name
+}
+
+var (
+	SlimContextKey     = &contextKey{"slim"}
+	RequestContextKey  = &contextKey{"request"}
+	ResponseContextKey = &contextKey{"response"}
+	ContextKey         = &contextKey{"context"}
+)
+
+type Slim struct {
+	// router 默认路由
+	router Router
+	// routers 虚拟主机（Virtual Hosting）表，是对虚拟主机的简单实现，
+	// 支持实域名和泛域名两种模式，当请求的域名不在此表内时使用 Slim.router，
+	// 所以其优先级高于 Slim.router。
+	routers map[string]Router
+	// routerCreator 创建自定义路由
+	routerCreator RouterCreator
+	// contextPool 网络请求上下文管理池
+	contextPool sync.Pool
+	// contextPathParamAllocSize 上下文中参数的最大数量
+	contextPathParamAllocSize int
+	// middleware 中间件列表
 	middleware []MiddlewareFunc
 
-	router        Router
-	routers       map[string]Router
-	routerCreator func(s *Slim) Router
+	negotiator *nego.Negotiator
 
-	contextPool               sync.Pool
-	contextPathParamAllocSize int
-
-	negotiator *Negotiator
+	// TrustedPlatform if set to a constant of value gin.Platform*, trusts the headers set by
+	// that platform, for example to determine the client IP
+	TrustedPlatform string
 
 	NewContextFunc       func(pathParamAllocSize int) EditableContext // 自定义 `slim.Context` 构造函数
 	ErrorHandler         ErrorHandlerFunc
 	Filesystem           fs.FS // 静态资源文件系统，默认值 `os.DirFS(".")`。
 	Binder               Binder
 	Validator            Validator
-	Renderer             Renderer // 自定义错误处理函数
-	JSONSerializer       Serializer
-	XMLSerializer        Serializer
-	Logger               *Logger
-	Server               *http.Server
-	TLSServer            *http.Server
-	Listener             net.Listener
-	TLSListener          net.Listener
-	StdLogger            *stdLog.Logger
-	AutoTLSManager       autocert.Manager
-	DisableHTTP2         bool
-	HideBanner           bool
-	HidePort             bool
-	ListenerNetwork      string
+	Renderer             Renderer // 自定义模板渲染器
+	JSONSerializer       serde.Serializer
+	XMLSerializer        serde.Serializer
+	Logger               *log.Logger
 	Debug                bool     // 是否开启调试模式
 	MultipartMemoryLimit int64    // 文件上传大小限制
 	PrettyIndent         string   // json/xml 格式化缩进
 	JSONPCallbacks       []string // jsonp 回调函数
+	IPExtractor          IPExtractor
 }
 
 func Classic() *Slim {
@@ -209,27 +139,20 @@ func Classic() *Slim {
 func New() *Slim {
 	s := &Slim{
 		routers:              make(map[string]Router),
-		negotiator:           NewNegotiator(10, nil),
-		Server:               new(http.Server),
-		TLSServer:            new(http.Server),
-		AutoTLSManager:       autocert.Manager{Prompt: autocert.AcceptTOS},
-		ListenerNetwork:      "tcp",
+		negotiator:           nego.New(10, nil),
 		NewContextFunc:       nil,
-		ErrorHandler:         ErrorHandler,
+		ErrorHandler:         DefaultErrorHandler,
 		Filesystem:           os.DirFS("."),
 		Binder:               &DefaultBinder{},
 		Validator:            nil,
 		Renderer:             nil,
-		JSONSerializer:       &JSONSerializer{},
-		XMLSerializer:        &XMLSerializer{},
-		Logger:               NewLogger(&LoggerOptions{}),
+		JSONSerializer:       serde.JSONSerializer{},
+		XMLSerializer:        serde.XMLSerializer{},
 		Debug:                true,
 		MultipartMemoryLimit: 32 << 20, // 32 MB
 		PrettyIndent:         "  ",
 		JSONPCallbacks:       []string{"jsonp", "callback"},
 	}
-	s.Server.Handler = s
-	s.TLSServer.Handler = s
 	s.router = s.NewRouter()
 	s.contextPool.New = func() any {
 		if s.NewContextFunc != nil {
@@ -242,7 +165,7 @@ func New() *Slim {
 
 func (s *Slim) NewContext(w http.ResponseWriter, r *http.Request) Context {
 	p := make(PathParams, s.contextPathParamAllocSize)
-	c := &context{
+	c := &contextImpl{
 		request:       r,
 		response:      nil,
 		allowsMethods: make([]string, 0),
@@ -265,7 +188,7 @@ func (s *Slim) NewRouter() Router {
 	} else {
 		r = NewRouter(RouterConfig{})
 	}
-	if x, ok := r.(*defaultRouter); ok {
+	if x, ok := r.(*routerImpl); ok {
 		x.slim = s
 	}
 	return r
@@ -396,22 +319,22 @@ func (s *Slim) File(path, file string) Route {
 }
 
 // Negotiator 返回内容协商工具
-func (s *Slim) Negotiator() *Negotiator {
+func (s *Slim) Negotiator() *nego.Negotiator {
 	return s.negotiator
 }
 
 // SetNegotiator 设置自定义内容协商工具
-func (s *Slim) SetNegotiator(negotiator *Negotiator) {
+func (s *Slim) SetNegotiator(negotiator *nego.Negotiator) {
 	s.negotiator = negotiator
 }
 
-// AcquireContext returns 自上下文缓存池中返回一个空闲的 `mux.Context` 实例。
-// 在不需要的时候，必须通过调用 `Mux.ReleaseContext` 方法归还该上下文。
+// AcquireContext returns 自上下文缓存池中返回一个空闲的 `slim.Context` 实例。
+// 在不需要的时候，必须通过调用 `Slim.ReleaseContext` 方法归还该上下文。
 func (s *Slim) AcquireContext() Context {
 	return s.contextPool.Get().(Context)
 }
 
-// ReleaseContext 归还通过 `Mux.AcquireContext` 获取的 `mux.Context` 实例
+// ReleaseContext 归还通过 `Slim.AcquireContext` 获取的 `slim.Context` 实例
 // 到上下文缓存池中.
 func (s *Slim) ReleaseContext(c Context) {
 	s.contextPool.Put(c)
@@ -421,36 +344,44 @@ func (s *Slim) ReleaseContext(c Context) {
 func (s *Slim) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := s.AcquireContext().(EditableContext)
 	c.Reset(w, r)
-	router := s.findRouter(r)
-	//stack := append(s.middleware, router.Middleware()...)
+
 	mw := Compose(s.middleware...)
 	var err error
 	if mw == nil {
+		router := s.findRouterByRequest(r)
 		err = s.findHandler(c, router)(c)
 	} else {
 		err = mw(c, func(cc Context) error {
+			router := s.findRouterByRequest(r)
 			return s.findHandler(c, router)(cc)
 		})
 	}
 	if err != nil {
 		s.handleError(c, err)
 	}
+
 	s.ReleaseContext(c)
 }
 
-// findRouter 通过请求中的原始域名确定路由
-func (s *Slim) findRouter(r *http.Request) Router {
+// findRouterByRequest 通过 `*http.Request` 实例获取对应的路由器
+func (s *Slim) findRouterByRequest(r *http.Request) Router {
 	if len(s.routers) == 0 {
 		return s.router
 	}
-	// 非标准报头，但常用于确定客户端发起的请求中使用的初始域名（如反向代理），
+
+	// 在正常情况下，我们是通过如负载均衡服务器来反向代理我们的程序实现对外服务的，
+	// 所以反向代理的域名或端口号可能会与处理请求的源头服务器有所不同，在这种情况下，
+	// 可以使用报头 X-Forwarded-Host 用来确定哪一个域名是最初被用来访问的。
 	// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/X-Forwarded-Host
 	host := r.Header.Get("X-Forwarded-Host")
+
 	if host == "" {
-		// RFC 7239
+		// 报头 X-Forwarded-Host 不属于任何一份既有规范，所以有可能无法获取到数据，
+		// 此时根据 RFC 7239 标准定义的另外一个报头 Forwarded 来来获取包含代理服务器的
+		// 客户端的信息；在这里，为什么 RFC 标准滞后于 X-Forwarded-Host 的原因是
+		// 由于后者已经成为既成标准了。
 		// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Forwarded
-		forwarded := r.Header.Get("Forwarded")
-		if forwarded != "" {
+		if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
 			for _, forwardedPair := range strings.Split(forwarded, ";") {
 				if tv := strings.SplitN(forwardedPair, "=", 2); len(tv) == 2 {
 					token, value := tv[0], tv[1]
@@ -463,26 +394,51 @@ func (s *Slim) findRouter(r *http.Request) Router {
 				}
 			}
 		}
+
 		if host == "" {
 			host = r.Host
 		}
 	}
-	// 指定路由 `dev.example.com`
-	if router, ok := s.routers[strings.ToLower(host)]; ok {
-		return router
+
+	return s.findRouter(host)
+}
+
+// findRouter 根据 host 查找路由器
+// Note: 调用该方法前，需要将参数转换成小写形式。
+func (s *Slim) findRouter(host string) Router {
+	if len(s.routers) > 0 && strings.Contains(host, ".") && host != "." {
+		// 优先使用完全匹配来查找，如：
+		// * 实域名 blog.example.com；
+		// * 泛域名 *.example.com。
+		if router, ok := s.routers[host]; ok {
+			return router
+		}
+
+		// 我们只支持简单形式的 host 表达式（如二级域名 *.example.com 或
+		// 三级域名 *.foo.example.com 等形式，不支持复杂的如 *.*.example.com 这类
+		// 的），所以对于已经是泛域名的，就是用默认路由器。
+		if host[:2] == "*." {
+			goto fallback
+		}
+
+		i := strings.IndexByte(host, '.')
+		j := strings.LastIndexByte(host, '.')
+		// 参数 host 至少是一个二级域名才行，所以对于非域名或
+		// 一级域名，我们同样采用默认路由器。
+		if i == -1 || i == j {
+			goto fallback
+		}
+
+		// 将 host 转化成 *.example.com 或 *.foo.example.com 的形式，
+		// 然后到虚拟主机表里面查询关联的路由器。
+		if router, ok := s.routers["*."+host[j:]]; ok {
+			return router
+		}
 	}
-	// 通配路由 `*.example.com`
-	parts := strings.Split(host, ".")
-	if len(parts) > 1 {
-		wildcard := append([]string{"*"}, parts[1:]...)
-		host = strings.Join(wildcard, ".")
-	} else {
-		host = strings.Join(parts, ".")
-	}
-	if router, ok := s.routers[strings.ToLower(host)]; ok {
-		return router
-	}
-	// 使用默认路由
+
+fallback:
+	// 如果没有注册虚拟主机，就返回默认路由就可以了，
+	// 所以对于非 SASS 系统，尽量不启用虚拟主机功能。
 	return s.router
 }
 
@@ -511,11 +467,15 @@ func (s *Slim) handleError(c Context, err error) {
 	if err == nil {
 		return
 	}
+
+	// FIXME: 这里有点问题需要考虑：
+	//  如果错误发生在中间件中，就不需要后续的 RouterCollector 的
+	//  错误处理器来处理，而应该提交给上级来处理。
 	if info := c.RouteInfo(); info != nil {
 		// 优先使用路由收集器中定义的错误处理器处理错误
 		collector := info.Collector()
 		for collector != nil {
-			if i, ok := collector.(interface{ HandleError(Context, error) }); ok {
+			if i, ok := collector.(ErrorHandler); ok {
 				i.HandleError(c, err)
 				return
 			}
@@ -523,223 +483,14 @@ func (s *Slim) handleError(c Context, err error) {
 		}
 		// 路由器中定义的错误处理器次之
 		router := info.Router()
-		if i, ok := router.(interface{ HandleError(Context, error) }); ok {
+		if i, ok := router.(ErrorHandler); ok {
 			i.HandleError(c, err)
 			return
 		}
 	}
+
 	// 最后使用上下文的错误处理器。
 	c.Error(err)
-}
-
-// Start starts an HTTP server.
-func (s *Slim) Start(address string) error {
-	s.startupMutex.Lock()
-	s.Server.Addr = address
-	if err := s.configureServer(s.Server); err != nil {
-		s.startupMutex.Unlock()
-		return err
-	}
-	s.startupMutex.Unlock()
-	return s.Server.Serve(s.Listener)
-}
-
-// StartTLS starts an HTTPS server.
-// If `certFile` or `keyFile` is `string`, the values are treated as file paths.
-// If `certFile` or `keyFile` is `[]byte`, the values are treated as the certificate or key as-is.
-func (s *Slim) StartTLS(address string, certFile, keyFile interface{}) (err error) {
-	s.startupMutex.Lock()
-	var cert []byte
-	if cert, err = filepathOrContent(certFile); err != nil {
-		s.startupMutex.Unlock()
-		return
-	}
-
-	var key []byte
-	if key, err = filepathOrContent(keyFile); err != nil {
-		s.startupMutex.Unlock()
-		return
-	}
-
-	srv := s.TLSServer
-	srv.TLSConfig = new(tls.Config)
-	srv.TLSConfig.Certificates = make([]tls.Certificate, 1)
-	if srv.TLSConfig.Certificates[0], err = tls.X509KeyPair(cert, key); err != nil {
-		s.startupMutex.Unlock()
-		return
-	}
-
-	s.configureTLS(address)
-	if err := s.configureServer(srv); err != nil {
-		s.startupMutex.Unlock()
-		return err
-	}
-	s.startupMutex.Unlock()
-	return srv.Serve(s.TLSListener)
-}
-
-func filepathOrContent(fileOrContent interface{}) (content []byte, err error) {
-	switch v := fileOrContent.(type) {
-	case string:
-		return os.ReadFile(v)
-	case []byte:
-		return v, nil
-	default:
-		return nil, ErrInvalidCertOrKeyType
-	}
-}
-
-// StartAutoTLS starts an HTTPS server using certificates automatically installed from https://letsencrypt.org.
-func (s *Slim) StartAutoTLS(address string) error {
-	s.startupMutex.Lock()
-	srv := s.TLSServer
-	srv.TLSConfig = new(tls.Config)
-	srv.TLSConfig.GetCertificate = s.AutoTLSManager.GetCertificate
-	srv.TLSConfig.NextProtos = append(srv.TLSConfig.NextProtos, acme.ALPNProto)
-
-	s.configureTLS(address)
-	if err := s.configureServer(srv); err != nil {
-		s.startupMutex.Unlock()
-		return err
-	}
-	s.startupMutex.Unlock()
-	return srv.Serve(s.TLSListener)
-}
-
-func (s *Slim) configureTLS(address string) {
-	srv := s.TLSServer
-	srv.Addr = address
-	if !s.DisableHTTP2 {
-		srv.TLSConfig.NextProtos = append(srv.TLSConfig.NextProtos, "h2")
-	}
-}
-
-// StartServer starts a custom http server.
-func (s *Slim) StartServer(srv *http.Server) (err error) {
-	s.startupMutex.Lock()
-	if err := s.configureServer(srv); err != nil {
-		s.startupMutex.Unlock()
-		return err
-	}
-	if srv.TLSConfig != nil {
-		s.startupMutex.Unlock()
-		return srv.Serve(s.TLSListener)
-	}
-	s.startupMutex.Unlock()
-	return srv.Serve(s.Listener)
-}
-
-func (s *Slim) configureServer(srv *http.Server) error {
-	// Setup
-	l := getColorWriter(s.Logger.Output())
-	srv.ErrorLog = s.StdLogger
-	srv.Handler = s
-	if s.Debug && !s.Logger.Enabled(nil, slog.LevelDebug) {
-		s.Logger.SetLevel(slog.LevelDebug)
-	}
-
-	if !s.HideBanner {
-		fmt.Fprintf(l, banner, color.NewValue("v"+Version, color.FgHiRed), color.NewValue(website, color.FgHiBlue))
-	}
-
-	if srv.TLSConfig == nil {
-		if s.Listener == nil {
-			l, err := newListener(srv.Addr, s.ListenerNetwork)
-			if err != nil {
-				return err
-			}
-			s.Listener = l
-		}
-		if !s.HidePort {
-			fmt.Fprintf(l, "⇨ http server started on %s\n", color.NewValue(s.Listener.Addr(), color.FgHiGreen))
-		}
-		return nil
-	}
-	if s.TLSListener == nil {
-		l, err := newListener(srv.Addr, s.ListenerNetwork)
-		if err != nil {
-			return err
-		}
-		s.TLSListener = tls.NewListener(l, srv.TLSConfig)
-	}
-	if !s.HidePort {
-		fmt.Fprintf(l, "⇨ http server started on %s\n", color.NewValue(s.TLSListener.Addr(), color.FgHiGreen))
-	}
-	return nil
-}
-
-// ListenerAddr returns net.Addr for Listener
-func (s *Slim) ListenerAddr() net.Addr {
-	s.startupMutex.RLock()
-	defer s.startupMutex.RUnlock()
-	if s.Listener == nil {
-		return nil
-	}
-	return s.Listener.Addr()
-}
-
-// TLSListenerAddr returns net.Addr for TLSListener
-func (s *Slim) TLSListenerAddr() net.Addr {
-	s.startupMutex.RLock()
-	defer s.startupMutex.RUnlock()
-	if s.TLSListener == nil {
-		return nil
-	}
-	return s.TLSListener.Addr()
-}
-
-// StartH2CServer starts a custom http/2 server with h2c (HTTP/2 Cleartext).
-func (s *Slim) StartH2CServer(address string, h2s *http2.Server) error {
-	s.startupMutex.Lock()
-	// Setup
-	l := getColorWriter(s.Logger.Output())
-	srv := s.Server
-	srv.Addr = address
-	srv.ErrorLog = s.StdLogger
-	srv.Handler = h2c.NewHandler(s, h2s)
-	if s.Debug && !s.Logger.Enabled(nil, slog.LevelDebug) {
-		s.Logger.SetLevel(slog.LevelDebug)
-	}
-
-	if !s.HideBanner {
-		fmt.Fprintf(l, banner, color.NewValue("v"+Version, color.FgHiRed), color.NewValue(website, color.FgHiBlue))
-	}
-
-	if s.Listener == nil {
-		l, err := newListener(srv.Addr, s.ListenerNetwork)
-		if err != nil {
-			s.startupMutex.Unlock()
-			return err
-		}
-		s.Listener = l
-	}
-	if !s.HidePort {
-		fmt.Fprintf(l, "⇨ http server started on %s\n", color.NewValue(s.Listener.Addr(), color.FgHiGreen))
-	}
-	s.startupMutex.Unlock()
-	return srv.Serve(s.Listener)
-}
-
-// Close immediately stops the server.
-// It internally calls `http.Server#Close()`.
-func (s *Slim) Close() error {
-	s.startupMutex.Lock()
-	defer s.startupMutex.Unlock()
-	if err := s.TLSServer.Close(); err != nil {
-		return err
-	}
-	return s.Server.Close()
-}
-
-// Shutdown stops the server gracefully.
-// It internally calls `http.Server#Shutdown()`.
-func (s *Slim) Shutdown(ctx stdctx.Context) error {
-	s.startupMutex.Lock()
-	defer s.startupMutex.Unlock()
-	if err := s.TLSServer.Shutdown(ctx); err != nil {
-		return err
-	}
-	return s.Server.Shutdown(ctx)
 }
 
 // WrapHandler wraps `http.Handler` into `slim.HandlerFunc`.
@@ -779,10 +530,12 @@ func Tap(h HandlerFunc, mw ...MiddlewareFunc) HandlerFunc {
 	}
 }
 
-// ErrorHandler 默认错误处理函数
-func ErrorHandler(c Context, err error) {
+// DefaultErrorHandler 默认错误处理函数
+func DefaultErrorHandler(c Context, err error) {
 	if c.Written() {
-		c.Logger().Error(err.Error())
+		if c.Slim().Debug {
+			c.Logger().Println(err.Error())
+		}
 		return
 	}
 	// TODO(hupeh): 根据 Accept 报头返回对应的格式
@@ -802,42 +555,4 @@ func NotFoundHandler(_ Context) error {
 
 func MethodNotAllowedHandler(_ Context) error {
 	return ErrMethodNotAllowed
-}
-
-func getColorWriter(w io.Writer) color.Writer {
-	if ww, ok := w.(color.Writer); ok {
-		return ww
-	}
-	return color.NewWriter(w)
-}
-
-// tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
-// connections. It's used by ListenAndServe and ListenAndServeTLS so
-// dead TCP connections (e.g., closing laptop mid-download) eventually
-// go away.
-type tcpKeepAliveListener struct {
-	*net.TCPListener
-}
-
-func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
-	if c, err = ln.AcceptTCP(); err != nil {
-		return
-	} else if err = c.(*net.TCPConn).SetKeepAlive(true); err != nil {
-		return
-	}
-	// Ignore error from setting the KeepAlivePeriod as some systems, such as
-	// OpenBSD, do not support setting TCP_USER_TIMEOUT on IPPROTO_TCP
-	_ = c.(*net.TCPConn).SetKeepAlivePeriod(3 * time.Minute)
-	return
-}
-
-func newListener(address, network string) (*tcpKeepAliveListener, error) {
-	if network != "tcp" && network != "tcp4" && network != "tcp6" {
-		return nil, ErrInvalidListenerNetwork
-	}
-	l, err := net.Listen(network, address)
-	if err != nil {
-		return nil, err
-	}
-	return &tcpKeepAliveListener{l.(*net.TCPListener)}, nil
 }

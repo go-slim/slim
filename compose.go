@@ -10,8 +10,8 @@ func Explicitly(c Context, next HandlerFunc) error {
 	return next(c)
 }
 
-// Compose 合并多个中间件为一个，实现洋葱模型，
-// 有别于 gin/chi/echo 等框架的的后入先出模式。
+// Compose 将多个中间件合并为一个，在执行期间，会自上而下传递请求，
+// 之后过滤并逆序返回响应，因此实现了友好且符合直观思维的洋葱模型。
 func Compose(middleware ...MiddlewareFunc) MiddlewareFunc {
 	l := len(middleware)
 	if l == 0 {
@@ -23,10 +23,9 @@ func Compose(middleware ...MiddlewareFunc) MiddlewareFunc {
 	var index int32 = -1
 	return func(c Context, next HandlerFunc) error {
 		var dispatch func(int) error
-		// TODO(hupeh): 测试性能
 		dispatch = func(i int) error {
 			if int32(i) <= atomic.LoadInt32(&index) {
-				return errors.New("next() called multiple times")
+				return errors.New("slim: next() called multiple times")
 			}
 			atomic.StoreInt32(&index, int32(i))
 			if i == len(middleware) {
