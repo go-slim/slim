@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -26,12 +28,16 @@ type Router interface {
 	RouteRegistrar
 	// RouteMatcher 实现路由匹配器接口
 	RouteMatcher
-	// Add 注册请求处理器，返回对应的路由接口实例
+	// Add registers a new route for method and path with matching handler.
 	Add([]string, string, HandlerFunc) (Route, error)
 	// Remove 移除路由
 	Remove(methods []string, path string) error
 	// Routes 返回注册的路由
 	Routes() []Route
+	// URI generates a URI from handler.
+	URI(h HandlerFunc, params ...any) string
+	// Reverse generates a URL from route name and provided parameters.
+	Reverse(name string, params ...any) string
 }
 
 // RouteMatchType describes possible states that request could be in perspective of routing
@@ -237,6 +243,8 @@ func NewRouteCollector(prefix string, parent RouteCollector, router Router) Rout
 
 var nextRouteId uint32
 
+var _ Router = (*routerImpl)(nil)
+
 type routerImpl struct {
 	collector    RouteCollector   // 路由收集器
 	tree         *node            // 路由节点树，与根节点的节点树相同
@@ -273,6 +281,7 @@ func (r *routerImpl) Add(methods []string, pattern string, h HandlerFunc) (Route
 	tail, _ := r.tree.insert(segments, &params, 0)
 	route := &routeImpl{
 		id:      atomic.AddUint32(&nextRouteId, 1),
+		name:    handlerName(h),
 		pattern: strings.Join(segments, ""),
 		methods: methods,
 		params:  params,
@@ -491,6 +500,32 @@ func (r *routerImpl) HandleError(c Context, err error) {
 	}
 }
 
+func (r *routerImpl) URI(h HandlerFunc, params ...any) string {
+	for _, route := range r.routes {
+		if handlerName(route.Handler()) == handlerName(h) {
+			return route.RouteInfo().Reverse(params...)
+		}
+	}
+	return ""
+}
+
+func handlerName(h HandlerFunc) string {
+	t := reflect.ValueOf(h).Type()
+	if t.Kind() == reflect.Func {
+		return runtime.FuncForPC(reflect.ValueOf(h).Pointer()).Name()
+	}
+	return t.String()
+}
+
+func (r *routerImpl) Reverse(name string, params ...any) string {
+	for _, route := range r.routes {
+		if route.Name() == name {
+			return route.RouteInfo().Reverse(params...)
+		}
+	}
+	return ""
+}
+
 // ComposeChainHandler 组合路由收集器的中间件和路由的中间件
 func ComposeChainHandler(route Route) HandlerFunc {
 	return func(c Context) error {
@@ -519,6 +554,8 @@ func ComposeChainHandler(route Route) HandlerFunc {
 		return mw(c, h)
 	}
 }
+
+var _ RouteCollector = (*routeCollectorImpl)(nil)
 
 type routeCollectorImpl struct {
 	prefix       string           // 路由前缀
@@ -694,6 +731,9 @@ func StaticDirectoryHandler(root string, disablePathUnescaping bool) HandlerFunc
 	}
 }
 
+var _ Route = (*routeImpl)(nil)
+var _ RouteInfo = (*routeImpl)(nil)
+
 type routeImpl struct {
 	id         uint32
 	name       string
@@ -739,6 +779,7 @@ func (r *routeImpl) Reverse(params ...any) string {
 	n := 0
 	for i, l := 0, len(r.pattern); i < l; i++ {
 		if (r.pattern[i] == paramLabel || r.pattern[i] == anyLabel) && n < ln {
+			// in case of `*` wildcard or `:` (unescaped colon) param we replace everything till next slash or end of path
 			for ; i < l && r.pattern[i] != pathSeparator; i++ {
 			}
 			if n < ln {

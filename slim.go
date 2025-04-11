@@ -13,10 +13,10 @@ import (
 	"zestack.dev/slim/serde"
 )
 
-// HandlerFunc 网络请求处理函数签名
+// HandlerFunc defines a function to serve HTTP requests.
 type HandlerFunc func(c Context) error
 
-// MiddlewareFunc 请求中间件函数签名
+// MiddlewareFunc defines a function to process middleware.
 type MiddlewareFunc func(c Context, next HandlerFunc) error
 
 // MiddlewareRegistrar 中间件注册接口
@@ -33,13 +33,13 @@ type MiddlewareComposer interface {
 	Compose() MiddlewareFunc
 }
 
-// ErrorHandler 错误处理器接口
+// ErrorHandler is a centralized error handler.
 type ErrorHandler interface {
 	// HandleError 处理错误
 	HandleError(c Context, err error)
 }
 
-// ErrorHandlerFunc 错误处理函数签名
+// ErrorHandlerFunc defines a function to centralize errors.
 type ErrorHandlerFunc func(c Context, err error)
 
 // HandleError 实现 ErrorHandler 接口
@@ -217,7 +217,7 @@ func (s *Slim) ResetRouterCreator(creator func(s *Slim) Router) {
 	clear(s.routers)
 }
 
-// Use 注册全局中间件
+// Use adds middleware to the chain which is run before router.
 func (s *Slim) Use(middleware ...MiddlewareFunc) {
 	s.middleware = append(s.middleware, middleware...)
 }
@@ -318,6 +318,24 @@ func (s *Slim) File(path, file string) Route {
 	return s.router.File(path, file)
 }
 
+// URI generates a URI from handler.
+// In case when Slim serves multiple hosts/domains use `s.Routers()["domain2.site"].Reverse()` to get specific host URL.
+func (s *Slim) URI(h HandlerFunc, params ...any) string {
+	return s.router.URI(h, params...)
+}
+
+// Reverse generates a URL from route name and provided parameters.
+// In case when Slim serves multiple hosts/domains use `s.Routers()["domain2.site"].Reverse()` to get specific host URL.
+func (s *Slim) Reverse(name string, params ...any) string {
+	return s.router.Reverse(name, params...)
+}
+
+// Routes returns the registered routes for default router.
+// In case when Slim serves multiple hosts/domains use `s.Routers()["domain2.site"].Routes()` to get specific host routes.
+func (s *Slim) Routes() []Route {
+	return s.router.Routes()
+}
+
 // Negotiator 返回内容协商工具
 func (s *Slim) Negotiator() *nego.Negotiator {
 	return s.negotiator
@@ -328,23 +346,25 @@ func (s *Slim) SetNegotiator(negotiator *nego.Negotiator) {
 	s.negotiator = negotiator
 }
 
-// AcquireContext returns 自上下文缓存池中返回一个空闲的 `slim.Context` 实例。
-// 在不需要的时候，必须通过调用 `Slim.ReleaseContext` 方法归还该上下文。
+// AcquireContext returns an empty `Context` instance from the pool.
+// You must return the context by calling `ReleaseContext()`.
 func (s *Slim) AcquireContext() Context {
 	return s.contextPool.Get().(Context)
 }
 
-// ReleaseContext 归还通过 `Slim.AcquireContext` 获取的 `slim.Context` 实例
-// 到上下文缓存池中.
+// ReleaseContext returns the `Context` instance back to the pool.
+// You must call it after `AcquireContext()`.
 func (s *Slim) ReleaseContext(c Context) {
 	s.contextPool.Put(c)
 }
 
-// ServeHTTP 实现 `http.Handler` 接口
+// ServeHTTP implements `http.Handler` interface, which serves HTTP requests.
 func (s *Slim) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Acquire context
 	c := s.AcquireContext().(EditableContext)
 	c.Reset(w, r)
 
+	// Execute chain
 	mw := Compose(s.middleware...)
 	var err error
 	if mw == nil {
@@ -356,10 +376,13 @@ func (s *Slim) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return s.findHandler(c, router)(cc)
 		})
 	}
+
+	// Handle error
 	if err != nil {
 		s.handleError(c, err)
 	}
 
+	// Release context
 	s.ReleaseContext(c)
 }
 
