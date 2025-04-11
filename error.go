@@ -29,9 +29,9 @@ var (
 
 // HTTPError represents an error that occurred while handling a request.
 type HTTPError struct {
-	StatusCode int   `json:"-"`
-	Message    any   `json:"message"`
-	Internal   error `json:"-"` // Stores the error returned by an external dependency
+	Code     int   `json:"-"`
+	Message  any   `json:"message"`
+	Internal error `json:"-"` // Stores the error returned by an external dependency
 }
 
 // NewHTTPError creates a new HTTPError instance.
@@ -53,17 +53,17 @@ func NewHTTPErrorWithInternal(code int, internalError error, message ...any) *HT
 // Error makes it compatible with `error` interface.
 func (he *HTTPError) Error() string {
 	if he.Internal == nil {
-		return fmt.Sprintf("code=%d, message=%v", he.StatusCode, he.Message)
+		return fmt.Sprintf("code=%d, message=%v", he.Code, he.Message)
 	}
-	return fmt.Sprintf("statusCode=%d, message=%v, internal=%v", he.StatusCode, he.Message, he.Internal)
+	return fmt.Sprintf("statusCode=%d, message=%v, internal=%v", he.Code, he.Message, he.Internal)
 }
 
 // WithInternal returns clone of HTTPError with err set to HTTPError.Internal field
 func (he *HTTPError) WithInternal(err error) *HTTPError {
 	return &HTTPError{
-		StatusCode: he.StatusCode,
-		Message:    he.Message,
-		Internal:   err,
+		Code:     he.Code,
+		Message:  he.Message,
+		Internal: err,
 	}
 }
 

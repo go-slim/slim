@@ -64,7 +64,7 @@ func (config StaticConfig) ToMiddleware() MiddlewareFunc {
 			}
 
 			var he *HTTPError
-			if !(errors.As(err, &he) && config.HTML5 && he.StatusCode == http.StatusNotFound) {
+			if !(errors.As(err, &he) && config.HTML5 && he.Code == http.StatusNotFound) {
 				return err
 			}
 
