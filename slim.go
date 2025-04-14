@@ -3,7 +3,6 @@ package slim
 import (
 	"errors"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -120,7 +119,7 @@ type Slim struct {
 	Renderer             Renderer // 自定义模板渲染器
 	JSONSerializer       serde.Serializer
 	XMLSerializer        serde.Serializer
-	Logger               *log.Logger
+	Logger               Logger
 	Debug                bool     // 是否开启调试模式
 	MultipartMemoryLimit int64    // 文件上传大小限制
 	PrettyIndent         string   // json/xml 格式化缩进
@@ -556,9 +555,7 @@ func Tap(h HandlerFunc, mw ...MiddlewareFunc) HandlerFunc {
 // DefaultErrorHandler 默认错误处理函数
 func DefaultErrorHandler(c Context, err error) {
 	if c.Written() {
-		if c.Slim().Debug {
-			c.Logger().Println(err.Error())
-		}
+		logError(c, err)
 		return
 	}
 	// TODO(hupeh): 根据 Accept 报头返回对应的格式
@@ -569,6 +566,17 @@ func DefaultErrorHandler(c Context, err error) {
 		http.Error(c.Response(), http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 	} else {
 		http.Error(c.Response(), err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func logError(c Context, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil && !errors.Is(err, ErrLoggerNotRegistered) {
+			panic(recovered)
+		}
+	}()
+	if l := c.Logger(); c.Slim().Debug && l != nil {
+		l.Error(err.Error())
 	}
 }
 

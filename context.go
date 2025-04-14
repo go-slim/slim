@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -36,9 +35,9 @@ type Context interface {
 	// SetResponse 为上下文设置新的 `http.ResponseWriter` 实现
 	SetResponse(r ResponseWriter)
 	// Logger returns the `Logger` instance.
-	Logger() *log.Logger
+	Logger() Logger
 	// SetLogger Set the logger
-	SetLogger(logger *log.Logger)
+	SetLogger(logger Logger)
 	// Filesystem returns `fs.FS`.
 	Filesystem() fs.FS
 	// SetFilesystem sets `fs.FS`
@@ -207,7 +206,7 @@ type contextImpl struct {
 	// Lifecycle is not handle by Slim and could have excess allocations per served Request
 	currentParams PathParams
 	negotiator    *nego.Negotiator
-	logger        *log.Logger
+	logger        Logger
 	query         url.Values
 	store         map[string]any
 	slim          *Slim
@@ -298,17 +297,17 @@ func (x *contextImpl) SetResponse(w ResponseWriter) {
 	x.response = w
 }
 
-func (x *contextImpl) Logger() *log.Logger {
+func (x *contextImpl) Logger() Logger {
 	if x.logger != nil {
 		return x.logger
 	}
 	if x.slim.Logger == nil {
-		panic(errors.New("logger not registered"))
+		panic(ErrLoggerNotRegistered)
 	}
 	return x.slim.Logger
 }
 
-func (x *contextImpl) SetLogger(l *log.Logger) {
+func (x *contextImpl) SetLogger(l Logger) {
 	x.logger = l
 }
 
