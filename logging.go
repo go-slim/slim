@@ -210,7 +210,7 @@ func LoggingWithConfig(config LoggerConfig) MiddlewareFunc {
 		}
 
 		if config.Output == nil {
-			_, err = c.Logger().Writer().Write(buf.Bytes())
+			_, err = c.Logger().Output().Write(buf.Bytes())
 			return
 		}
 		_, err = config.Output.Write(buf.Bytes())
