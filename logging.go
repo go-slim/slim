@@ -10,7 +10,7 @@ import (
 	"time"
 	"unsafe"
 
-	"zestack.dev/slim/nego"
+	"go-slim.dev/slim/nego"
 )
 
 // LoggerConfig defines the config for Logger middleware.
@@ -213,7 +213,6 @@ func LoggingWithConfig(config LoggerConfig) MiddlewareFunc {
 			_, err = c.Logger().Output().Write(buf.Bytes())
 			return
 		}
-		_, err = config.Output.Write(buf.Bytes())
 		return
 	}
 }

@@ -1,4 +1,18 @@
 package slim
 
-// Version 项目当前版本信息
-const Version = "0.0.3"
+const (
+	Version = "0.0.3"
+	website = "https://go-slim.dev"
+	banner  = `
+ .--,       .--,
+( (  \.---./  ) )
+ '.__/o   o\__.'
+    {=  ^  =}
+     >  -  <
+_____________________________________________
+High performance, minimalist Go web framework
+version: %s
+website: %s
+_____________________________________________
+`
+)

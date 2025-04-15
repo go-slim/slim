@@ -24,8 +24,9 @@ var (
 	ErrRendererNotRegistered       = errors.New("slim: renderer not registered")
 	ErrInvalidRedirectCode         = errors.New("slim: invalid redirect status code")
 	ErrCookieNotFound              = errors.New("slim: cookie not found")
+	ErrInvalidCertOrKeyType        = errors.New("slim: invalid cert or key type, must be string or []byte")
+	ErrInvalidListenerNetwork      = errors.New("slim: invalid listener network")
 	ErrFilesystemNotRegistered     = errors.New("slim: filesystem not registered")
-	ErrLoggerNotRegistered         = errors.New("slim: logger not registered")
 )
 
 // HTTPError represents an error that occurred while handling a request.

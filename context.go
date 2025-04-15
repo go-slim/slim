@@ -18,7 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"zestack.dev/slim/nego"
+	"go-slim.dev/l4g"
+	"go-slim.dev/slim/nego"
 )
 
 // Context 网络请求上下文，包含了请求数据（路径、路径参数、载荷）
@@ -35,9 +36,9 @@ type Context interface {
 	// SetResponse 为上下文设置新的 `http.ResponseWriter` 实现
 	SetResponse(r ResponseWriter)
 	// Logger returns the `Logger` instance.
-	Logger() Logger
+	Logger() l4g.Logger
 	// SetLogger Set the logger
-	SetLogger(logger Logger)
+	SetLogger(logger l4g.Logger)
 	// Filesystem returns `fs.FS`.
 	Filesystem() fs.FS
 	// SetFilesystem sets `fs.FS`
@@ -206,7 +207,7 @@ type contextImpl struct {
 	// Lifecycle is not handle by Slim and could have excess allocations per served Request
 	currentParams PathParams
 	negotiator    *nego.Negotiator
-	logger        Logger
+	logger        l4g.Logger
 	query         url.Values
 	store         map[string]any
 	slim          *Slim
@@ -297,17 +298,14 @@ func (x *contextImpl) SetResponse(w ResponseWriter) {
 	x.response = w
 }
 
-func (x *contextImpl) Logger() Logger {
+func (x *contextImpl) Logger() l4g.Logger {
 	if x.logger != nil {
 		return x.logger
-	}
-	if x.slim.Logger == nil {
-		panic(ErrLoggerNotRegistered)
 	}
 	return x.slim.Logger
 }
 
-func (x *contextImpl) SetLogger(l Logger) {
+func (x *contextImpl) SetLogger(l l4g.Logger) {
 	x.logger = l
 }
 

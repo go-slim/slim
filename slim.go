@@ -1,15 +1,28 @@
 package slim
 
 import (
+	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"io/fs"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
-	"zestack.dev/slim/nego"
-	"zestack.dev/slim/serde"
+	"go-slim.dev/l4g"
+	"go-slim.dev/slim/nego"
+	"go-slim.dev/slim/serde"
+
+	"github.com/fatih/color"
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // HandlerFunc defines a function to serve HTTP requests.
@@ -90,6 +103,13 @@ var (
 )
 
 type Slim struct {
+	// startupMutex is mutex to lock Server instance access during server configuration and startup. Useful for to get
+	// listener address info (on which interface/port was listener bound) without having data races.
+	startupMutex sync.RWMutex
+
+	// middleware 中间件列表
+	middleware []MiddlewareFunc
+
 	// router 默认路由
 	router Router
 	// routers 虚拟主机（Virtual Hosting）表，是对虚拟主机的简单实现，
@@ -98,18 +118,13 @@ type Slim struct {
 	routers map[string]Router
 	// routerCreator 创建自定义路由
 	routerCreator RouterCreator
+
 	// contextPool 网络请求上下文管理池
 	contextPool sync.Pool
 	// contextPathParamAllocSize 上下文中参数的最大数量
 	contextPathParamAllocSize int
-	// middleware 中间件列表
-	middleware []MiddlewareFunc
 
 	negotiator *nego.Negotiator
-
-	// TrustedPlatform if set to a constant of value gin.Platform*, trusts the headers set by
-	// that platform, for example to determine the client IP
-	TrustedPlatform string
 
 	NewContextFunc       func(pathParamAllocSize int) EditableContext // 自定义 `slim.Context` 构造函数
 	ErrorHandler         ErrorHandlerFunc
@@ -119,7 +134,17 @@ type Slim struct {
 	Renderer             Renderer // 自定义模板渲染器
 	JSONSerializer       serde.Serializer
 	XMLSerializer        serde.Serializer
-	Logger               Logger
+	Logger               l4g.Logger
+	Server               *http.Server
+	TLSServer            *http.Server
+	Listener             net.Listener
+	TLSListener          net.Listener
+	StdLogger            *log.Logger
+	AutoTLSManager       autocert.Manager
+	DisableHTTP2         bool
+	HideBanner           bool
+	HidePort             bool
+	ListenerNetwork      string
 	Debug                bool     // 是否开启调试模式
 	MultipartMemoryLimit int64    // 文件上传大小限制
 	PrettyIndent         string   // json/xml 格式化缩进
@@ -139,6 +164,10 @@ func New() *Slim {
 	s := &Slim{
 		routers:              make(map[string]Router),
 		negotiator:           nego.New(10, nil),
+		Server:               new(http.Server),
+		TLSServer:            new(http.Server),
+		AutoTLSManager:       autocert.Manager{Prompt: autocert.AcceptTOS},
+		ListenerNetwork:      "tcp",
 		NewContextFunc:       nil,
 		ErrorHandler:         DefaultErrorHandler,
 		Filesystem:           os.DirFS("."),
@@ -147,11 +176,14 @@ func New() *Slim {
 		Renderer:             nil,
 		JSONSerializer:       serde.JSONSerializer{},
 		XMLSerializer:        serde.XMLSerializer{},
+		Logger:               l4g.New(os.Stdout, l4g.WithPrefix("slim")),
 		Debug:                true,
 		MultipartMemoryLimit: 32 << 20, // 32 MB
 		PrettyIndent:         "  ",
 		JSONPCallbacks:       []string{"jsonp", "callback"},
 	}
+	s.Server.Handler = s
+	s.TLSServer.Handler = s
 	s.router = s.NewRouter()
 	s.contextPool.New = func() any {
 		if s.NewContextFunc != nil {
@@ -515,6 +547,247 @@ func (s *Slim) handleError(c Context, err error) {
 	c.Error(err)
 }
 
+// Start starts an HTTP server.
+func (s *Slim) Start(address string) error {
+	s.startupMutex.Lock()
+	s.Server.Addr = address
+	if err := s.configureServer(s.Server); err != nil {
+		s.startupMutex.Unlock()
+		return err
+	}
+	s.startupMutex.Unlock()
+	return s.Server.Serve(s.Listener)
+}
+
+// StartTLS starts an HTTPS server.
+// If `certFile` or `keyFile` is `string`, the values are treated as file paths.
+// If `certFile` or `keyFile` is `[]byte`, the values are treated as the certificate or key as-is.
+func (s *Slim) StartTLS(address string, certFile, keyFile interface{}) (err error) {
+	s.startupMutex.Lock()
+	var cert []byte
+	if cert, err = filepathOrContent(certFile); err != nil {
+		s.startupMutex.Unlock()
+		return
+	}
+
+	var key []byte
+	if key, err = filepathOrContent(keyFile); err != nil {
+		s.startupMutex.Unlock()
+		return
+	}
+
+	srv := s.TLSServer
+	srv.TLSConfig = new(tls.Config)
+	srv.TLSConfig.Certificates = make([]tls.Certificate, 1)
+	if srv.TLSConfig.Certificates[0], err = tls.X509KeyPair(cert, key); err != nil {
+		s.startupMutex.Unlock()
+		return
+	}
+
+	s.configureTLS(address)
+	if err := s.configureServer(srv); err != nil {
+		s.startupMutex.Unlock()
+		return err
+	}
+	s.startupMutex.Unlock()
+	return srv.Serve(s.TLSListener)
+}
+
+func filepathOrContent(fileOrContent interface{}) (content []byte, err error) {
+	switch v := fileOrContent.(type) {
+	case string:
+		return os.ReadFile(v)
+	case []byte:
+		return v, nil
+	default:
+		return nil, ErrInvalidCertOrKeyType
+	}
+}
+
+// StartAutoTLS starts an HTTPS server using certificates automatically installed from https://letsencrypt.org.
+func (s *Slim) StartAutoTLS(address string) error {
+	s.startupMutex.Lock()
+	srv := s.TLSServer
+	srv.TLSConfig = new(tls.Config)
+	srv.TLSConfig.GetCertificate = s.AutoTLSManager.GetCertificate
+	srv.TLSConfig.NextProtos = append(srv.TLSConfig.NextProtos, acme.ALPNProto)
+
+	s.configureTLS(address)
+	if err := s.configureServer(srv); err != nil {
+		s.startupMutex.Unlock()
+		return err
+	}
+	s.startupMutex.Unlock()
+	return srv.Serve(s.TLSListener)
+}
+
+func (s *Slim) configureTLS(address string) {
+	srv := s.TLSServer
+	srv.Addr = address
+	if !s.DisableHTTP2 {
+		srv.TLSConfig.NextProtos = append(srv.TLSConfig.NextProtos, "h2")
+	}
+}
+
+// StartServer starts a custom http server.
+func (s *Slim) StartServer(srv *http.Server) (err error) {
+	s.startupMutex.Lock()
+	if err := s.configureServer(srv); err != nil {
+		s.startupMutex.Unlock()
+		return err
+	}
+	if srv.TLSConfig != nil {
+		s.startupMutex.Unlock()
+		return srv.Serve(s.TLSListener)
+	}
+	s.startupMutex.Unlock()
+	return srv.Serve(s.Listener)
+}
+
+func (s *Slim) configureServer(srv *http.Server) error {
+	// Setup
+	l := s.Logger.Output()
+	srv.ErrorLog = s.StdLogger
+	srv.Handler = s
+	if s.Debug && !s.Logger.Enabled(l4g.DEBUG) {
+		s.Logger.SetLevel(l4g.DEBUG)
+	}
+
+	if !s.HideBanner {
+		fmt.Fprintf(l, banner, color.HiRedString("v"+Version), color.HiBlueString(website))
+	}
+
+	if srv.TLSConfig == nil {
+		if s.Listener == nil {
+			l, err := newListener(srv.Addr, s.ListenerNetwork)
+			if err != nil {
+				return err
+			}
+			s.Listener = l
+		}
+		if !s.HidePort {
+			fmt.Fprintf(l, "⇨ http server started on %s\n", color.HiGreenString(s.Listener.Addr().String()))
+		}
+		return nil
+	}
+	if s.TLSListener == nil {
+		l, err := newListener(srv.Addr, s.ListenerNetwork)
+		if err != nil {
+			return err
+		}
+		s.TLSListener = tls.NewListener(l, srv.TLSConfig)
+	}
+	if !s.HidePort {
+		fmt.Fprintf(l, "⇨ http server started on %s\n", color.HiGreenString(s.TLSListener.Addr().String()))
+	}
+	return nil
+}
+
+// ListenerAddr returns net.Addr for Listener
+func (s *Slim) ListenerAddr() net.Addr {
+	s.startupMutex.RLock()
+	defer s.startupMutex.RUnlock()
+	if s.Listener == nil {
+		return nil
+	}
+	return s.Listener.Addr()
+}
+
+// TLSListenerAddr returns net.Addr for TLSListener
+func (s *Slim) TLSListenerAddr() net.Addr {
+	s.startupMutex.RLock()
+	defer s.startupMutex.RUnlock()
+	if s.TLSListener == nil {
+		return nil
+	}
+	return s.TLSListener.Addr()
+}
+
+// StartH2CServer starts a custom http/2 server with h2c (HTTP/2 Cleartext).
+func (s *Slim) StartH2CServer(address string, h2s *http2.Server) error {
+	s.startupMutex.Lock()
+	// Setup
+	l := s.Logger.Output()
+	srv := s.Server
+	srv.Addr = address
+	srv.ErrorLog = s.StdLogger
+	srv.Handler = h2c.NewHandler(s, h2s)
+	if s.Debug && !s.Logger.Enabled(l4g.DEBUG) {
+		s.Logger.SetLevel(l4g.DEBUG)
+	}
+
+	if !s.HideBanner {
+		fmt.Fprintf(l, banner, color.HiRedString("v"+Version), color.HiBlueString(website))
+	}
+
+	if s.Listener == nil {
+		l, err := newListener(srv.Addr, s.ListenerNetwork)
+		if err != nil {
+			s.startupMutex.Unlock()
+			return err
+		}
+		s.Listener = l
+	}
+	if !s.HidePort {
+		fmt.Fprintf(l, "⇨ http server started on %s\n", color.HiGreenString(s.Listener.Addr().String()))
+	}
+	s.startupMutex.Unlock()
+	return srv.Serve(s.Listener)
+}
+
+// Close immediately stops the server.
+// It internally calls `http.Server#Close()`.
+func (s *Slim) Close() error {
+	s.startupMutex.Lock()
+	defer s.startupMutex.Unlock()
+	if err := s.TLSServer.Close(); err != nil {
+		return err
+	}
+	return s.Server.Close()
+}
+
+// Shutdown stops the server gracefully.
+// It internally calls `http.Server#Shutdown()`.
+func (s *Slim) Shutdown(ctx context.Context) error {
+	s.startupMutex.Lock()
+	defer s.startupMutex.Unlock()
+	if err := s.TLSServer.Shutdown(ctx); err != nil {
+		return err
+	}
+	return s.Server.Shutdown(ctx)
+}
+
+// tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
+// connections. It's used by ListenAndServe and ListenAndServeTLS so
+// dead TCP connections (e.g., closing laptop mid-download) eventually
+// go away.
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+	if c, err = ln.AcceptTCP(); err != nil {
+		return
+	} else if err = c.(*net.TCPConn).SetKeepAlive(true); err != nil {
+		return
+	}
+	// Ignore error from setting the KeepAlivePeriod as some systems, such as
+	// OpenBSD, do not support setting TCP_USER_TIMEOUT on IPPROTO_TCP
+	_ = c.(*net.TCPConn).SetKeepAlivePeriod(3 * time.Minute)
+	return
+}
+
+func newListener(address, network string) (*tcpKeepAliveListener, error) {
+	if network != "tcp" && network != "tcp4" && network != "tcp6" {
+		return nil, ErrInvalidListenerNetwork
+	}
+	l, err := net.Listen(network, address)
+	if err != nil {
+		return nil, err
+	}
+	return &tcpKeepAliveListener{l.(*net.TCPListener)}, nil
+}
+
 // WrapHandler wraps `http.Handler` into `slim.HandlerFunc`.
 func WrapHandler(h http.Handler) HandlerFunc {
 	return func(c Context) error {
@@ -570,13 +843,8 @@ func DefaultErrorHandler(c Context, err error) {
 }
 
 func logError(c Context, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil && !errors.Is(err, ErrLoggerNotRegistered) {
-			panic(recovered)
-		}
-	}()
-	if l := c.Logger(); c.Slim().Debug && l != nil {
-		l.Error(err.Error())
+	if c.Slim().Debug {
+		c.Logger().Error(err)
 	}
 }
 
