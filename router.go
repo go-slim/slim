@@ -161,7 +161,7 @@ type Route interface {
 	// Name 返回路由名称
 	Name() string
 	// SetName 设置路由名称
-	SetName(name string)
+	SetName(name string) Route
 	// Pattern 路由路径表达式
 	Pattern() string
 	// Methods 返回支持的 HTTP 请求方法
@@ -745,7 +745,7 @@ type routeImpl struct {
 	middleware []MiddlewareFunc
 }
 
-func (r *routeImpl) SetName(name string) { r.name = name }
+func (r *routeImpl) SetName(name string) Route { r.name = name; return r }
 func (r *routeImpl) Use(middleware ...MiddlewareFunc) {
 	r.middleware = append(r.middleware, middleware...)
 }
