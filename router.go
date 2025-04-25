@@ -162,6 +162,10 @@ type Route interface {
 	Name() string
 	// SetName 设置路由名称
 	SetName(name string) Route
+	// Title 返回路由标题
+	Title() string
+	// SetTitle 设置路由标题
+	SetTitle(name string) Route
 	// Pattern 路由路径表达式
 	Pattern() string
 	// Methods 返回支持的 HTTP 请求方法
@@ -182,6 +186,8 @@ type RouteInfo interface {
 	Collector() RouteCollector
 	// Name 返回路由名称
 	Name() string
+	// Title 返回路由标题
+	Title() string
 	// Methods 返回支持的请求方法列表
 	Methods() []string
 	// Pattern 路由路径表达式
@@ -737,6 +743,7 @@ var _ RouteInfo = (*routeImpl)(nil)
 type routeImpl struct {
 	id         uint32
 	name       string
+	title      string
 	collector  RouteCollector
 	pattern    string
 	methods    []string
@@ -745,7 +752,8 @@ type routeImpl struct {
 	middleware []MiddlewareFunc
 }
 
-func (r *routeImpl) SetName(name string) Route { r.name = name; return r }
+func (r *routeImpl) SetName(name string) Route   { r.name = name; return r }
+func (r *routeImpl) SetTitle(title string) Route { r.title = title; return r }
 func (r *routeImpl) Use(middleware ...MiddlewareFunc) {
 	r.middleware = append(r.middleware, middleware...)
 }
@@ -753,6 +761,7 @@ func (r *routeImpl) ID() uint32                   { return r.id }
 func (r *routeImpl) Router() Router               { return r.collector.Router() }
 func (r *routeImpl) Collector() RouteCollector    { return r.collector }
 func (r *routeImpl) Name() string                 { return r.name }
+func (r *routeImpl) Title() string                { return r.title }
 func (r *routeImpl) Pattern() string              { return r.pattern }
 func (r *routeImpl) Methods() []string            { return r.methods[:] }
 func (r *routeImpl) Handler() HandlerFunc         { return r.handler }
