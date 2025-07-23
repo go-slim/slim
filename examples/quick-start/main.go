@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	s := slim.Classic()
+	s := slim.New()
 	s.GET("/", func(c slim.Context) error {
 		return c.String(http.StatusOK, "Hello, World!")
 	})

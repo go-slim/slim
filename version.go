@@ -1,7 +1,7 @@
 package slim
 
 const (
-	Version = "0.0.3"
+	Version = "0.0.4"
 	website = "https://go-slim.dev"
 	banner  = `
  .--,       .--,

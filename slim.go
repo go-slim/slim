@@ -152,14 +152,6 @@ type Slim struct {
 	IPExtractor          IPExtractor
 }
 
-func Classic() *Slim {
-	s := New()
-	s.Use(Logging())
-	s.Use(Recovery())
-	s.Use(Static("public"))
-	return s
-}
-
 func New() *Slim {
 	s := &Slim{
 		routers:              make(map[string]Router),
@@ -176,7 +168,7 @@ func New() *Slim {
 		Renderer:             nil,
 		JSONSerializer:       serde.JSONSerializer{},
 		XMLSerializer:        serde.XMLSerializer{},
-		Logger:               l4g.New(os.Stdout, l4g.WithPrefix("slim")),
+		Logger:               l4g.New(os.Stdout),
 		Debug:                true,
 		MultipartMemoryLimit: 32 << 20, // 32 MB
 		PrettyIndent:         "  ",
@@ -649,8 +641,8 @@ func (s *Slim) configureServer(srv *http.Server) error {
 	l := s.Logger.Output()
 	srv.ErrorLog = s.StdLogger
 	srv.Handler = s
-	if s.Debug && !s.Logger.Enabled(l4g.DEBUG) {
-		s.Logger.SetLevel(l4g.DEBUG)
+	if s.Debug && !s.Logger.Enabled(l4g.LevelDebug) {
+		s.Logger.SetLevel(l4g.LevelDebug)
 	}
 
 	if !s.HideBanner {
@@ -712,8 +704,8 @@ func (s *Slim) StartH2CServer(address string, h2s *http2.Server) error {
 	srv.Addr = address
 	srv.ErrorLog = s.StdLogger
 	srv.Handler = h2c.NewHandler(s, h2s)
-	if s.Debug && !s.Logger.Enabled(l4g.DEBUG) {
-		s.Logger.SetLevel(l4g.DEBUG)
+	if s.Debug && !s.Logger.Enabled(l4g.LevelDebug) {
+		s.Logger.SetLevel(l4g.LevelDebug)
 	}
 
 	if !s.HideBanner {
