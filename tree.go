@@ -266,7 +266,7 @@ func (n *node) remove(
 	case paramLabel:
 		if n.paramChild != nil {
 			routes, ok = n.paramChild.remove(methods, trailingSlash, routingTrailingSlash, segments, depth+1)
-			if n.leafCount <= 0 {
+			if n.paramChild.leafCount <= 0 {
 				n.paramChild = nil
 			}
 		}
