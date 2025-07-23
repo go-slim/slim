@@ -223,7 +223,7 @@ func LogBegin(c slim.Context) {
 		req := c.Request()
 		p.StartTime = time.Now()
 		p.Proto = req.Proto
-		p.RequestURI = cmp.Or(p.RequestURI, fmt.Sprintf("%s://%s%s", c.Scheme(), req.Host, req.RequestURI))
+		p.RequestURI = cmp.Or(p.RequestURI, fmt.Sprintf("%s://%s%s", c.Scheme(), req.Host, req.URL.Path))
 		p.RawQuery = cmp.Or(p.RawQuery, req.URL.RawQuery)
 		p.Method = cmp.Or(p.Method, req.Method)
 		p.RemoteAddr = cmp.Or(p.RemoteAddr, req.RemoteAddr)
