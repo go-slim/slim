@@ -30,6 +30,7 @@ var (
 	bWhite   = []byte{'\033', '[', '3', '7', ';', '1', 'm'}
 
 	reset = []byte{'\033', '[', '0', 'm'}
+	dim   = []byte{'\033', '[', '2', 'm'}
 )
 
 var IsTTY bool

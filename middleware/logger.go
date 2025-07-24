@@ -1,9 +1,13 @@
 package middleware
 
 import (
+	"bytes"
 	"cmp"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"go-slim.dev/slim"
@@ -133,6 +137,53 @@ func GetLogPayload(c slim.Context) (LogPayload, bool) {
 	return p, ok
 }
 
+func LogBegin(c slim.Context) {
+	p, ok := GetLogPayload(c)
+	if !ok || p.StartTime.IsZero() {
+		req := c.Request()
+		p.StartTime = time.Now()
+		p.Proto = req.Proto
+		p.RequestURI = cmp.Or(p.RequestURI, fmt.Sprintf("%s://%s%s", c.Scheme(), req.Host, req.URL.Path))
+		p.RawQuery = cmp.Or(p.RawQuery, req.URL.RawQuery)
+		p.Method = cmp.Or(p.Method, req.Method)
+		p.RemoteAddr = cmp.Or(p.RemoteAddr, req.RemoteAddr)
+	}
+	entry, ok := c.Value(logEntryCtxKey).(LogEntry)
+	if ok && entry != nil {
+		p.Extra = entry.Begin(c)
+	}
+	valueIntoContext(c, logPayloadCtxKey, p)
+}
+
+func LogEnd(c slim.Context, err error) {
+	p, ok := GetLogPayload(c)
+	if !ok || p.StartTime.IsZero() {
+		return // no log payload, not call LogBegin()
+	}
+
+	res := c.Response()
+
+	p.Error = err
+	p.StatusCode = res.Status()
+	p.Written = res.Size()
+	p.Elapsed = time.Since(p.StartTime)
+
+	if p.Extra == nil {
+		p.Extra = make(map[string]any)
+	}
+
+	entry, ok := c.Value(logEntryCtxKey).(LogEntry)
+	if !ok || entry == nil {
+		entry = DefaultLoggerConfig.NewEntry(c)
+	}
+	for key, val := range entry.End(c, err) {
+		p.Extra[key] = val
+	}
+
+	// prints the log payload.
+	entry.Print(c, p)
+}
+
 var _ LogEntry = (*defaultLogEntry)(nil)
 
 type defaultLogEntry struct {
@@ -164,6 +215,14 @@ func (d *defaultLogEntry) SetColorable(colorable bool) {
 func (d *defaultLogEntry) SetTimeLayout(layout string) {
 	d.timeLayout = layout
 }
+
+// LogCategoryMark
+// zeroWidthNonJoiner := "\u200C" // 零宽非连接符
+// zeroWidthSpace := "\u200B" // 零宽空格
+// zeroWidthJoiner := "\u200D" // 零宽连接符
+const LogCategoryMark = "\u200C\u200B\u200D"
+
+var UseLogCategoryMark = false
 
 func (d *defaultLogEntry) Print(c slim.Context, p LogPayload) {
 	buf := getBuffer()
@@ -210,6 +269,16 @@ func (d *defaultLogEntry) Print(c slim.Context, p LogPayload) {
 		cP(buf, useColor, nRed, "%s", elapsed)
 	}
 
+	if p.Error != nil {
+		lines := formatError(p.Error)
+		printCategory(buf, useColor, "Spot a mistake:", lines)
+	}
+
+	if extra := formatExtra(p.Extra); len(extra) > 0 {
+		lines := bytes.Split(extra, []byte("\n"))
+		printCategory(buf, useColor, "Additional data:", lines)
+	}
+
 	d.w.Write(*buf)
 }
 
@@ -217,49 +286,81 @@ func (d *defaultLogEntry) Panic(v any, stack []byte) {
 	PrintPrettyStack(v, stack)
 }
 
-func LogBegin(c slim.Context) {
-	p, ok := GetLogPayload(c)
-	if !ok || p.StartTime.IsZero() {
-		req := c.Request()
-		p.StartTime = time.Now()
-		p.Proto = req.Proto
-		p.RequestURI = cmp.Or(p.RequestURI, fmt.Sprintf("%s://%s%s", c.Scheme(), req.Host, req.URL.Path))
-		p.RawQuery = cmp.Or(p.RawQuery, req.URL.RawQuery)
-		p.Method = cmp.Or(p.Method, req.Method)
-		p.RemoteAddr = cmp.Or(p.RemoteAddr, req.RemoteAddr)
+func printCategory(buf *[]byte, useColor bool, title string, lines [][]byte) {
+	if len(lines) == 0 {
+		return
 	}
-	entry, ok := c.Value(logEntryCtxKey).(LogEntry)
-	if ok && entry != nil {
-		p.Extra = entry.Begin(c)
+	*buf = append(*buf, '\n', '\n')
+	if UseLogCategoryMark {
+		*buf = append(*buf, LogCategoryMark...)
 	}
-	valueIntoContext(c, logPayloadCtxKey, p)
+	cP(buf, useColor, dim, title)
+	*buf = append(*buf, '\n')
+	for _, line := range lines {
+		*buf = fmt.Append(*buf, "\n  ")
+		cP(buf, useColor, nBlue, "%s", line)
+	}
 }
 
-func LogEnd(c slim.Context, err error) {
-	p, ok := GetLogPayload(c)
-	if !ok || p.StartTime.IsZero() {
-		return // no log payload, not call LogBegin()
+func formatError(err error) [][]byte {
+	bts := fmt.Appendf(nil, "%+v", err)
+	if len(bts) == 0 {
+		bts = fmt.Appendf(nil, "%s", err)
 	}
-
-	res := c.Response()
-
-	p.Error = err
-	p.StatusCode = res.Status()
-	p.Written = res.Size()
-	p.Elapsed = time.Since(p.StartTime)
-
-	if p.Extra == nil {
-		p.Extra = make(map[string]any)
+	if len(bts) == 0 {
+		bts = fmt.Append(nil, err.Error())
 	}
-
-	entry, ok := c.Value(logEntryCtxKey).(LogEntry)
-	if !ok || entry == nil {
-		entry = DefaultLoggerConfig.NewEntry(c)
+	if len(bts) == 0 {
+		bts = []byte("error occurred")
 	}
-	for key, val := range entry.End(c, err) {
-		p.Extra[key] = val
-	}
+	return bytes.Split(bts, []byte{'\n'})
+}
 
-	// prints the log payload.
-	entry.Print(c, p)
+func formatExtra(p map[string]any) []byte {
+	if len(p) == 0 {
+		return nil
+	}
+	cw := getCutoffWriter()
+	defer freeCutoffWriter(cw)
+	enc := json.NewEncoder(cw)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(p)
+	if err == nil && !cw.cutoffHit {
+		return cw.buf[:] // 可接受单行输出
+	}
+	pretty, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return fmt.Appendf(nil, "%#v\n", p)
+	}
+	return pretty
+}
+
+var cwPool = sync.Pool{
+	New: func() any {
+		return &cutoffWriter{}
+	},
+}
+
+func getCutoffWriter() *cutoffWriter {
+	return cwPool.Get().(*cutoffWriter)
+}
+
+func freeCutoffWriter(w *cutoffWriter) {
+	w.cutoffHit = false
+	w.buf = w.buf[:0]
+	cwPool.Put(w)
+}
+
+type cutoffWriter struct {
+	buf       []byte
+	cutoffHit bool
+}
+
+func (w *cutoffWriter) Write(p []byte) (int, error) {
+	if len(w.buf)+len(p) > 80 {
+		w.cutoffHit = true
+		return 0, errors.New("output exceeds max length")
+	}
+	w.buf = append(w.buf, p...)
+	return len(p), nil
 }
