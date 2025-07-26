@@ -468,7 +468,7 @@ func (r *routerImpl) Match(req *http.Request, pathParams *PathParams) RouteMatch
 				if key == "" {
 					key = string(anyLabel)
 				}
-				value = strings.Join(segments[valueIndex:], "/")[1:]
+				value = strings.Join(segments[valueIndex:], "")[1:]
 				if tailingSlash {
 					value += "/"
 				}
