@@ -23,19 +23,15 @@ jobs:
 
       - name: Go version
         run: go version
-        working-directory: slim
 
       - name: Go mod download
         run: go mod download
-        working-directory: slim
 
       - name: Build examples (compile only)
         run: go build ./examples/...
-        working-directory: slim
 
       - name: Test ./...
         run: go test ./...
-        working-directory: slim
 
   bench:
     name: Benchmarks
@@ -53,9 +49,8 @@ jobs:
 
       - name: Go mod download
         run: go mod download
-        working-directory: slim
 
       - name: Run benchmarks (short)
         run: |
-          go test -run=^$ -bench . -benchmem -benchtime=100x
-        working-directory: slim
+          # Run a subset of fast, non-parallel benchmarks to avoid CI hangs
+          go test -run=^$ -bench '^BenchmarkRouter_|^BenchmarkResponse_' -benchmem -benchtime=20x -count=1 -timeout=2m
