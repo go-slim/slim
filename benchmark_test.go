@@ -9,6 +9,7 @@ import (
 
 	"go-slim.dev/l4g"
 	"strconv"
+	"strings"
 )
 
 // benchServe runs b.N requests against s after setup, asserting expected status.
@@ -30,6 +31,97 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 		s.ServeHTTP(rr, req)
 		if rr.Code != want {
 			b.Fatalf("unexpected status: got=%d want=%d", rr.Code, want)
+		}
+	}
+}
+func BenchmarkRouter_MultiMethodsSamePath(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		s.GET("/mm", func(c Context) error { return c.NoContent(http.StatusOK) })
+		s.POST("/mm", func(c Context) error { return c.NoContent(http.StatusOK) })
+		s.PUT("/mm", func(c Context) error { return c.NoContent(http.StatusOK) })
+		s.DELETE("/mm", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodGet, "/mm", http.StatusOK)
+}
+
+func BenchmarkRouter_LongQueryString(b *testing.B) {
+	// Use a long query string to test parsing/lookup overhead
+	q := strings.Repeat("a", 2048)
+	benchServe(b, func(s *Slim) {
+		s.GET("/q", func(c Context) error { _ = c.QueryParam("x"); return c.NoContent(http.StatusOK) })
+	}, http.MethodGet, "/q?x="+q, http.StatusOK)
+}
+
+func BenchmarkRouter_LargeHeaders(b *testing.B) {
+	s := New()
+	s.StdLogger = nil
+	s.Logger = l4g.New(io.Discard)
+	s.GET("/h", func(c Context) error { return c.NoContent(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/h", nil)
+	// Add many/large headers once (request reused)
+	for i := 0; i < 50; i++ {
+		req.Header.Set("X-K-"+strconv.Itoa(i), strings.Repeat("v", 64))
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		s.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			b.Fatalf("unexpected status: %d", rr.Code)
+		}
+	}
+}
+
+func BenchmarkJSON_Serialize_Small(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		type resp struct {
+			OK  bool   `json:"ok"`
+			Msg string `json:"msg"`
+		}
+		s.GET("/json-small", func(c Context) error { return c.JSON(http.StatusOK, resp{OK: true, Msg: "hi"}) })
+	}, http.MethodGet, "/json-small", http.StatusOK)
+}
+
+func BenchmarkJSON_Serialize_Large(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		type item struct {
+			V string `json:"v"`
+		}
+		big := make([]item, 0, 1000)
+		for i := 0; i < 1000; i++ {
+			big = append(big, item{V: strings.Repeat("x", 40)})
+		}
+		s.GET("/json-large", func(c Context) error { return c.JSON(http.StatusOK, big) })
+	}, http.MethodGet, "/json-large", http.StatusOK)
+}
+
+func BenchmarkBind_JSON_Small(b *testing.B) {
+	s := New()
+	s.StdLogger = nil
+	s.Logger = l4g.New(io.Discard)
+	type reqBody struct {
+		Name string `json:"name"`
+	}
+	s.POST("/bind", func(c Context) error {
+		var rb reqBody
+		if err := c.Bind(&rb); err != nil {
+			return err
+		}
+		return c.NoContent(http.StatusOK)
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		body := bytes.NewReader([]byte(`{"name":"slim"}`))
+		req := httptest.NewRequest(http.MethodPost, "/bind", body)
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		s.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			b.Fatalf("unexpected status: %d", rr.Code)
 		}
 	}
 }
