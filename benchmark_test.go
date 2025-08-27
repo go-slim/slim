@@ -2,13 +2,12 @@ package slim
 
 import (
 	"io"
-	"fmt"
-	"strconv"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"go-slim.dev/l4g"
+	"strconv"
 )
 
 // benchServe runs b.N requests against s after setup, asserting expected status.
