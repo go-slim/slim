@@ -29,6 +29,10 @@ jobs:
         run: go mod download
         working-directory: slim
 
+      - name: Build examples (compile only)
+        run: go build ./examples/...
+        working-directory: slim
+
       - name: Test ./...
         run: go test ./...
         working-directory: slim
