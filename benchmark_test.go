@@ -120,3 +120,82 @@ func BenchmarkResponse_BodySize_Large(b *testing.B) {
 		s.GET("/large", func(c Context) error { return c.Blob(http.StatusOK, "application/octet-stream", payload) })
 	}, http.MethodGet, "/large", http.StatusOK)
 }
+
+// Deep path matching and multi-parameter routes
+func BenchmarkRouter_DeepPath(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		s.GET("/a/b/c/d/e/f/g/h/i/j", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodGet, "/a/b/c/d/e/f/g/h/i/j", http.StatusOK)
+}
+
+func BenchmarkRouter_MultiParams(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		s.GET("/users/:uid/books/:bid/chapters/:cid", func(c Context) error {
+			_ = c.PathParam("uid")
+			_ = c.PathParam("bid")
+			_ = c.PathParam("cid")
+			return c.NoContent(http.StatusOK)
+		})
+	}, http.MethodGet, "/users/1/books/2/chapters/3", http.StatusOK)
+}
+
+// Large route sets
+func registerManyRoutes(s *Slim, n int) {
+	for i := 0; i < n; i++ {
+		p := "/r/" + strconv.Itoa(i)
+		s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
+	}
+}
+
+func BenchmarkRouter_LargeRouteSet_1k(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		registerManyRoutes(s, 1000)
+	}, http.MethodGet, "/r/999", http.StatusOK)
+}
+
+func BenchmarkRouter_LargeRouteSet_10k(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		registerManyRoutes(s, 10000)
+	}, http.MethodGet, "/r/9999", http.StatusOK)
+}
+
+// Parallel benchmarks
+func BenchmarkRouter_Parallel_Simple(b *testing.B) {
+	s := New()
+	s.StdLogger = nil
+	s.Logger = l4g.New(io.Discard)
+	s.GET("/p", func(c Context) error { return c.NoContent(http.StatusOK) })
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/p", nil)
+			s.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				b.Fatalf("unexpected status: %d", rr.Code)
+			}
+		}
+	})
+}
+
+func BenchmarkRouter_Parallel_Param(b *testing.B) {
+	s := New()
+	s.StdLogger = nil
+	s.Logger = l4g.New(io.Discard)
+	s.GET("/u/:id", func(c Context) error { _ = c.PathParam("id"); return c.NoContent(http.StatusOK) })
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/u/42", nil)
+			s.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				b.Fatalf("unexpected status: %d", rr.Code)
+			}
+		}
+	})
+}
