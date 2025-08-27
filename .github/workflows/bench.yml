@@ -1,0 +1,62 @@
+name: Bench (Echo/Gin/Fiber vs Slim)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: off
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Go version
+        run: go version
+
+      - name: Download deps (slim/bench module)
+        run: go mod download
+        working-directory: bench
+
+      - name: Install benchstat
+        run: |
+          go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Run benchmarks per framework
+        run: |
+          set -e
+          mkdir -p out
+          # Slim
+          go test -run=^$ -bench '.*_Slim$'  -benchmem -count=5 -benchtime=100ms ./... > out/run_slim.txt
+          # Gin
+          go test -run=^$ -bench '.*_Gin$'   -benchmem -count=5 -benchtime=100ms ./... > out/run_gin.txt
+          # Echo
+          go test -run=^$ -bench '.*_Echo$'  -benchmem -count=5 -benchtime=100ms ./... > out/run_echo.txt
+          # Fiber
+          go test -run=^$ -bench '.*_Fiber$' -benchmem -count=5 -benchtime=100ms ./... > out/run_fiber.txt
+        working-directory: bench
+
+      - name: Aggregate with benchstat (markdown)
+        run: |
+          benchstat -format markdown out/run_slim.txt out/run_gin.txt out/run_echo.txt out/run_fiber.txt > out/compare.md
+        working-directory: bench
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: |
+            bench/out/*.txt
+            bench/out/compare.md
