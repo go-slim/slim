@@ -1,30 +1,29 @@
 # Slim
-[![Slim CI](https://github.com/go-slim/slim/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/go-slim/slim/actions/workflows/ci.yml)
 
-[中文](README.zh-CN.md)
+[English](README.md)
 
-A fast, composable HTTP framework for Go. Clean APIs, powerful routing, and pragmatic defaults.
+一款快速、可组合的 Go HTTP 框架。提供简洁的 API、强大的路由与务实的默认设置。
 
-Website: https://go-slim.dev
+官网：https://go-slim.dev
 
-## Features
+## 特性
 
-- Minimal core with pluggable middleware
-- Fast radix-tree router with params and wildcards
-- Centralized error handling with per-collector and router overrides
-- Content negotiation (types, encodings, charsets, languages)
-- JSON/XML/JSONP rendering and custom serializers
-- Static files and directories via fs.FS
-- Built-in middleware: logger, recovery, CORS, rate limiter
-- Virtual hosting (vhost) support
+- 极简内核，支持可插拔中间件
+- 基于前缀树的高性能路由，支持路径参数与通配符
+- 统一错误处理机制，并支持按路由收集器与路由器级别覆盖
+- 内容协商（类型、编码、字符集、语言）
+- JSON / XML / JSONP 渲染与自定义序列化器
+- 基于 fs.FS 的静态文件与目录服务
+- 内置中间件：日志、异常恢复、CORS、限流
+- 虚拟主机（vhost）支持
 
-## Installation
+## 安装
 
 ```bash
 go get go-slim.dev/slim
 ```
 
-## Quick Start
+## 快速开始
 
 ```go
 package main
@@ -45,48 +44,31 @@ func main() {
 }
 ```
 
-## Examples
+## 示例
 
-See runnable examples in `examples/`:
-- `examples/static` — serve static files
-- `examples/cors` — CORS middleware
-- `examples/logger-recovery` — logging and panic recovery
-- `examples/nego` — content negotiation
-- `examples/rate-limiter` — rate limiting
+在 `examples/` 目录中提供了可运行示例：
+- `examples/static` —— 静态文件服务
+- `examples/cors` —— CORS 中间件
+- `examples/logger-recovery` —— 日志与异常恢复
+- `examples/nego` —— 内容协商
+- `examples/rate-limiter` —— 限流
 
-Run any example:
+运行示例：
 ```bash
 cd examples/static
 go run .
 ```
 
-## Documentation
+## 文档
 
-Full docs, guides, and API reference: https://go-slim.dev
+完整文档、指南与 API 参考： https://go-slim.dev
 
-## Testing & CI
-
-Run tests locally:
+## 测试
 
 ```bash
 go test ./...
 ```
 
-Run benchmarks locally (examples):
+## 许可证
 
-```bash
-# run all benchmarks with allocations
-go test -run=^$ -bench . -benchmem
-
-# run a specific benchmark
-go test -run=^$ -bench BenchmarkResponse_StaticDir_LargeNested -benchmem
-```
-
-CI:
-
-- GitHub Actions runs tests on every push and PR.
-- Short benchmarks run in CI for `slim` with `-benchtime=100x`.
-
-## License
-
-Apache-2.0. See `LICENSE`.
+Apache-2.0，详见 `LICENSE`。
