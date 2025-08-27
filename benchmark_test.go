@@ -37,6 +37,30 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 	}
 }
 
+// benchServeParallel runs requests in parallel to stress concurrency
+func benchServeParallel(b *testing.B, setup func(s *Slim), method, path string, want int) {
+    b.Helper()
+
+    s := New()
+    s.StdLogger = nil
+    s.Logger = l4g.New(io.Discard)
+
+    setup(s)
+
+    b.ReportAllocs()
+    b.ResetTimer()
+    b.RunParallel(func(pb *testing.PB) {
+        for pb.Next() {
+            rr := httptest.NewRecorder()
+            req := httptest.NewRequest(method, path, nil)
+            s.ServeHTTP(rr, req)
+            if rr.Code != want {
+                b.Fatalf("unexpected status: got=%d want=%d", rr.Code, want)
+            }
+        }
+    })
+}
+
 // HEAD should be handled implicitly by GET when no explicit HEAD handler is registered
 func BenchmarkRouter_HEAD_ImplicitViaGET(b *testing.B) {
     benchServe(b, func(s *Slim) {
