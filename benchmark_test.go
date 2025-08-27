@@ -51,6 +51,50 @@ func BenchmarkRouter_HEAD_Explicit(b *testing.B) {
     }, http.MethodHead, "/head2", http.StatusOK)
 }
 
+// HEAD with both GET and HEAD registered on same path
+func BenchmarkRouter_HEAD_WithGETSamePath(b *testing.B) {
+    benchServe(b, func(s *Slim) {
+        s.GET("/head3", func(c Context) error { return c.NoContent(http.StatusOK) })
+        s.HEAD("/head3", func(c Context) error { return c.NoContent(http.StatusOK) })
+    }, http.MethodHead, "/head3", http.StatusOK)
+}
+
+// Vhost + Static middleware, HEAD request to nested file
+func BenchmarkVhost_Static_HEAD_Nested(b *testing.B) {
+    // Prepare vhost static directory tree
+    cwd, err := os.Getwd()
+    if err != nil { b.Fatal(err) }
+    absRoot, err := os.MkdirTemp(cwd, "slim-bench-vhost-static-*")
+    if err != nil { b.Fatal(err) }
+    b.Cleanup(func() { os.RemoveAll(absRoot) })
+
+    nested := filepath.Join(absRoot, "a", "b")
+    if err := os.MkdirAll(nested, 0o755); err != nil { b.Fatal(err) }
+    data := bytes.Repeat([]byte("x"), 1<<20)
+    if err := os.WriteFile(filepath.Join(nested, "c.txt"), data, 0o644); err != nil { b.Fatal(err) }
+
+    s := New()
+    s.StdLogger = nil
+    s.Logger = l4g.New(io.Discard)
+
+    // vhost with static
+    vh := s.Host("v1.local")
+    vh.Use(Static(absRoot))
+
+    req := httptest.NewRequest(http.MethodHead, "/a/b/c.txt", nil)
+    req.Host = "v1.local"
+
+    b.ReportAllocs()
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        rr := httptest.NewRecorder()
+        s.ServeHTTP(rr, req)
+        if rr.Code != http.StatusOK {
+            b.Fatalf("unexpected status: got=%d want=%d", rr.Code, http.StatusOK)
+        }
+    }
+}
+
 // OPTIONS 405 should include Allow header with supported methods
 func BenchmarkRouter_OPTIONS_AllowHeader(b *testing.B) {
     s := New()
