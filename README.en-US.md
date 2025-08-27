@@ -1,7 +1,7 @@
 # Slim
 [![Slim CI](https://github.com/go-slim/slim/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/go-slim/slim/actions/workflows/ci.yml)
 
-[中文](README.zh-CN.md)
+[中文](README.md)
 
 A fast, composable HTTP framework for Go. Clean APIs, powerful routing, and pragmatic defaults.
 

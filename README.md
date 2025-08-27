@@ -1,6 +1,6 @@
 # Slim
 
-[English](README.md)
+[English](README.en-US.md)
 
 一款快速、可组合的 Go HTTP 框架。提供简洁的 API、强大的路由与务实的默认设置。
 
