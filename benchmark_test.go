@@ -1,6 +1,7 @@
 package slim
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +42,7 @@ func BenchmarkRouter_Simple(b *testing.B) {
 
 func BenchmarkRouter_Param(b *testing.B) {
 	benchServe(b, func(s *Slim) {
-		s.GET("/users/:id", func(c Context) error { return c.String(http.StatusOK, c.Param("id")) })
+		s.GET("/users/:id", func(c Context) error { return c.String(http.StatusOK, c.PathParam("id")) })
 	}, http.MethodGet, "/users/12345", http.StatusOK)
 }
 
@@ -51,13 +52,41 @@ func BenchmarkRouter_Wildcard(b *testing.B) {
 	}, http.MethodGet, "/static/css/app.css", http.StatusOK)
 }
 
+func BenchmarkRouter_NotFound(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		// no routes registered
+	}, http.MethodGet, "/nope", http.StatusNotFound)
+}
+
+func BenchmarkRouter_MethodNotAllowed(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		s.POST("/same", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodGet, "/same", http.StatusMethodNotAllowed)
+}
+
+func BenchmarkRouter_MultiCollectors(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		s.Router().Route("/api", func(gr RouteCollector) {
+			gr.GET("/ping", func(c Context) error { return c.NoContent(http.StatusOK) })
+		})
+		s.Router().Route("/admin", func(gr RouteCollector) {
+			gr.GET("/health", func(c Context) error { return c.NoContent(http.StatusOK) })
+		})
+	}, http.MethodGet, "/api/ping", http.StatusOK)
+}
+
+func BenchmarkVHost_Router(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		s.GET("/", func(c Context) error { return c.NoContent(http.StatusOK) }) // default
+		s.Host("api.example.com").GET("/ping", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodGet, "http://api.example.com/ping", http.StatusOK)
+}
+
 // makeNMiddlewares returns n middlewares chained in order.
 func makeNMiddlewares(n int) []MiddlewareFunc {
 	mws := make([]MiddlewareFunc, 0, n)
 	for i := 0; i < n; i++ {
-		mws = append(mws, func(next HandlerFunc) HandlerFunc {
-			return func(c Context) error { return next(c) }
-		})
+		mws = append(mws, func(c Context, next HandlerFunc) error { return next(c) })
 	}
 	return mws
 }
@@ -76,4 +105,18 @@ func BenchmarkMiddleware_ChainDepth(b *testing.B) {
 			}, http.MethodGet, "/mw", http.StatusOK)
 		})
 	}
+}
+
+func BenchmarkResponse_BodySize_Small(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		payload := []byte("hello")
+		s.GET("/small", func(c Context) error { return c.Blob(http.StatusOK, "text/plain", payload) })
+	}, http.MethodGet, "/small", http.StatusOK)
+}
+
+func BenchmarkResponse_BodySize_Large(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		payload := bytes.Repeat([]byte("x"), 1<<20) // 1MB
+		s.GET("/large", func(c Context) error { return c.Blob(http.StatusOK, "application/octet-stream", payload) })
+	}, http.MethodGet, "/large", http.StatusOK)
 }
