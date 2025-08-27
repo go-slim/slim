@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"go-slim.dev/l4g"
@@ -33,6 +34,54 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 			b.Fatalf("unexpected status: got=%d want=%d", rr.Code, want)
 		}
 	}
+}
+
+// Static file serving (large) via Router.File
+func BenchmarkResponse_File_Large(b *testing.B) {
+    // Prepare temp file ~1MB
+    payload := bytes.Repeat([]byte("z"), 1<<20)
+    f, err := os.CreateTemp("", "slim-bench-*.bin")
+    if err != nil {
+        b.Fatal(err)
+    }
+    defer os.Remove(f.Name())
+    if _, err := f.Write(payload); err != nil { b.Fatal(err) }
+    if err := f.Close(); err != nil { b.Fatal(err) }
+
+    benchServe(b, func(s *Slim) {
+        s.File("/file", f.Name())
+    }, http.MethodGet, "/file", http.StatusOK)
+}
+
+// Router build time with large route sets
+func BenchmarkRouter_BuildTime_50k(b *testing.B) {
+    b.ReportAllocs()
+    for i := 0; i < b.N; i++ {
+        s := New()
+        s.StdLogger = nil
+        s.Logger = l4g.New(io.Discard)
+        b.StartTimer()
+        for j := 0; j < 50000; j++ {
+            p := "/bt/" + strconv.Itoa(j)
+            s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
+        }
+        b.StopTimer()
+    }
+}
+
+func BenchmarkRouter_BuildTime_100k(b *testing.B) {
+    b.ReportAllocs()
+    for i := 0; i < b.N; i++ {
+        s := New()
+        s.StdLogger = nil
+        s.Logger = l4g.New(io.Discard)
+        b.StartTimer()
+        for j := 0; j < 100000; j++ {
+            p := "/bt2/" + strconv.Itoa(j)
+            s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
+        }
+        b.StopTimer()
+    }
 }
 
 // OPTIONS behavior on same path with/without explicit handler
