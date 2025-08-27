@@ -37,6 +37,20 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 	}
 }
 
+// HEAD should be handled implicitly by GET when no explicit HEAD handler is registered
+func BenchmarkRouter_HEAD_ImplicitViaGET(b *testing.B) {
+    benchServe(b, func(s *Slim) {
+        s.GET("/head", func(c Context) error { return c.NoContent(http.StatusOK) })
+    }, http.MethodHead, "/head", http.StatusMethodNotAllowed)
+}
+
+// HEAD with explicit handler
+func BenchmarkRouter_HEAD_Explicit(b *testing.B) {
+    benchServe(b, func(s *Slim) {
+        s.HEAD("/head2", func(c Context) error { return c.NoContent(http.StatusOK) })
+    }, http.MethodHead, "/head2", http.StatusOK)
+}
+
 // OPTIONS 405 should include Allow header with supported methods
 func BenchmarkRouter_OPTIONS_AllowHeader(b *testing.B) {
     s := New()
