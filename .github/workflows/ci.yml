@@ -24,6 +24,9 @@ jobs:
       - name: Go version
         run: go version
 
+      - name: Go mod download
+        run: go mod download
+
       - name: Test ./...
         run: go test ./...
 
@@ -40,6 +43,9 @@ jobs:
         with:
           go-version: stable
           cache: true
+
+      - name: Go mod download
+        run: go mod download
 
       - name: Run benchmarks (short)
         run: |
