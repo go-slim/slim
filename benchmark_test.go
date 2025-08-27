@@ -174,6 +174,30 @@ func BenchmarkVHost_Router(b *testing.B) {
 	}, http.MethodGet, "http://api.example.com/ping", http.StatusOK)
 }
 
+// Many vhosts each with nested collectors/routes
+func BenchmarkVHost_ManyHostsCollectors(b *testing.B) {
+	benchServe(b, func(s *Slim) {
+		for i := 0; i < 10; i++ {
+			host := "h" + strconv.Itoa(i) + ".example.com"
+			r := s.Host(host)
+			r.Route("/api", func(rc RouteCollector) {
+				rc.GET("/ping", func(c Context) error { return c.NoContent(http.StatusOK) })
+				rc.GET("/v1/items/:id", func(c Context) error { _ = c.PathParam("id"); return c.NoContent(http.StatusOK) })
+			})
+		}
+	}, http.MethodGet, "http://h7.example.com/api/ping", http.StatusOK)
+}
+
+// Streaming large response via Context.Stream
+func BenchmarkResponse_Stream_Large(b *testing.B) {
+	payload := bytes.Repeat([]byte("z"), 1<<20) // 1MB
+	benchServe(b, func(s *Slim) {
+		s.GET("/stream", func(c Context) error {
+			return c.Stream(http.StatusOK, "application/octet-stream", bytes.NewReader(payload))
+		})
+	}, http.MethodGet, "/stream", http.StatusOK)
+}
+
 // makeNMiddlewares returns n middlewares chained in order.
 func makeNMiddlewares(n int) []MiddlewareFunc {
 	mws := make([]MiddlewareFunc, 0, n)
