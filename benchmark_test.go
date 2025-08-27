@@ -1,12 +1,13 @@
 package slim
 
 import (
-	"bytes"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"testing"
+    "bytes"
+    "io"
+    "net/http"
+    "net/http/httptest"
+    "os"
+    "path/filepath"
+    "testing"
 
 	"go-slim.dev/l4g"
 	"strconv"
@@ -34,6 +35,50 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 			b.Fatalf("unexpected status: got=%d want=%d", rr.Code, want)
 		}
 	}
+}
+
+// OPTIONS 405 should include Allow header with supported methods
+func BenchmarkRouter_OPTIONS_AllowHeader(b *testing.B) {
+    s := New()
+    s.StdLogger = nil
+    s.Logger = l4g.New(io.Discard)
+    // Register methods but exclude OPTIONS to trigger 405
+    s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}, "/opt3", func(c Context) error { return c.NoContent(http.StatusOK) })
+
+    req := httptest.NewRequest(http.MethodOptions, "/opt3", nil)
+    b.ReportAllocs()
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        rr := httptest.NewRecorder()
+        s.ServeHTTP(rr, req)
+        if rr.Code != http.StatusMethodNotAllowed {
+            b.Fatalf("unexpected status: %d", rr.Code)
+        }
+        ah := rr.Header().Get("Allow")
+        if ah == "" {
+            b.Fatalf("missing Allow header")
+        }
+    }
+}
+
+// Static directory serving with nested paths
+func BenchmarkResponse_StaticDir_LargeNested(b *testing.B) {
+    // Create static tree under current working directory to keep paths relative for default Filesystem
+    cwd, err := os.Getwd()
+    if err != nil { b.Fatal(err) }
+    absRoot, err := os.MkdirTemp(cwd, "slim-bench-static-*")
+    if err != nil { b.Fatal(err) }
+    b.Cleanup(func() { os.RemoveAll(absRoot) })
+
+    nested := filepath.Join(absRoot, "a", "b")
+    if err := os.MkdirAll(nested, 0o755); err != nil { b.Fatal(err) }
+    data := bytes.Repeat([]byte("y"), 1<<20) // 1MB file
+    file := filepath.Join(nested, "c.txt")
+    if err := os.WriteFile(file, data, 0o644); err != nil { b.Fatal(err) }
+
+    benchServe(b, func(s *Slim) {
+        s.Use(Static(absRoot))
+    }, http.MethodGet, "/a/b/c.txt", http.StatusOK)
 }
 
 // Static file serving (large) via Router.File
