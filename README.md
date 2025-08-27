@@ -1,5 +1,7 @@
 # Slim
 
+[中文](README.zh-CN.md)
+
 A fast, composable HTTP framework for Go. Clean APIs, powerful routing, and pragmatic defaults.
 
 Website: https://go-slim.dev
