@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gofiber/fiber/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/labstack/echo/v4"
 	"go-slim.dev/slim"
 )
@@ -25,6 +26,27 @@ func setupSlimParams() http.Handler {
 		return c.String(http.StatusOK, c.PathParam("id"))
 	})
 	return s
+}
+
+// ------------------------ Chi ------------------------
+func setupChiParams() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/users/{id}", func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(chi.URLParam(req, "id")))
+	})
+	return r
+}
+
+func BenchmarkParams_Chi(b *testing.B) {
+	h := setupChiParams()
+	req := httptest.NewRequest(http.MethodGet, "/users/12345", nil)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+	}
 }
 
 func BenchmarkParams_Slim(b *testing.B) {

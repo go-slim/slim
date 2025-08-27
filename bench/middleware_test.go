@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gin-gonic/gin"
 	"github.com/gofiber/fiber/v2"
 	"github.com/labstack/echo/v4"
@@ -120,3 +121,35 @@ func benchFiberMW(b *testing.B, n int) {
 
 func BenchmarkMiddleware5_Fiber(b *testing.B)  { benchFiberMW(b, 5) }
 func BenchmarkMiddleware10_Fiber(b *testing.B) { benchFiberMW(b, 10) }
+
+// ------------------------ Chi ------------------------
+func newChiWithMW(n int) http.Handler {
+	r := chi.NewRouter()
+	// 构造 n 层无操作中间件
+	for i := 0; i < n; i++ {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next.ServeHTTP(w, r)
+			})
+		})
+	}
+	r.Get("/mw", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	return r
+}
+
+func benchChiMW(b *testing.B, n int) {
+	h := newChiWithMW(n)
+	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+	}
+}
+
+func BenchmarkMiddleware5_Chi(b *testing.B)  { benchChiMW(b, 5) }
+func BenchmarkMiddleware10_Chi(b *testing.B) { benchChiMW(b, 10) }

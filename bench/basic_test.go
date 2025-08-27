@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gin-gonic/gin"
 	"github.com/gofiber/fiber/v2"
 	"github.com/labstack/echo/v4"
@@ -147,5 +148,42 @@ func BenchmarkJSON_Fiber(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = app.Test(req, -1)
+	}
+}
+
+// ------------------------ Chi ------------------------
+func setupChiBasic() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	})
+	r.Get("/json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(payload)
+	})
+	return r
+}
+
+func BenchmarkBasic_Chi(b *testing.B) {
+	h := setupChiBasic()
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+	}
+}
+
+func BenchmarkJSON_Chi(b *testing.B) {
+	h := setupChiBasic()
+	req := httptest.NewRequest(http.MethodGet, "/json", nil)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
 	}
 }
