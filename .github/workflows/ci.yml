@@ -23,12 +23,15 @@ jobs:
 
       - name: Go version
         run: go version
+        working-directory: slim
 
       - name: Go mod download
         run: go mod download
+        working-directory: slim
 
       - name: Test ./...
         run: go test ./...
+        working-directory: slim
 
   bench:
     name: Benchmarks
@@ -46,7 +49,9 @@ jobs:
 
       - name: Go mod download
         run: go mod download
+        working-directory: slim
 
       - name: Run benchmarks (short)
         run: |
           go test -run=^$ -bench . -benchmem -benchtime=100x
+        working-directory: slim
