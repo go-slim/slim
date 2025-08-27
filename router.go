@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -392,9 +393,9 @@ func (r *routerImpl) Remove(methods []string, path string) error {
 	if !ok {
 		return nil
 	}
-	for _, route := range routes {
-		i := slices.IndexFunc(r.routes, func(x Route) bool {
-			return x.(*routeImpl).id == route
+	for _, rid := range routes {
+		i := slices.IndexFunc(r.routes, func(rt Route) bool {
+			return rt.(*routeImpl).id == rid
 		})
 		if i == -1 {
 			return errors.New("route not found")
@@ -702,7 +703,11 @@ func (rc *routeCollectorImpl) Static(prefix, root string) Route {
 }
 
 func (rc *routeCollectorImpl) File(pattern, file string) Route {
-	return rc.GET(pattern, func(c Context) error { return c.File(file) })
+    if filepath.IsAbs(file) {
+        rel := strings.TrimPrefix(filepath.Clean(file), string(filepath.Separator))
+        return rc.GET(pattern, func(c Context) error { return c.File(rel, os.DirFS(string(filepath.Separator))) })
+    }
+    return rc.GET(pattern, func(c Context) error { return c.File(file) })
 }
 
 // StaticDirectoryHandler creates handler function to serve files from given a root path

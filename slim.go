@@ -477,7 +477,8 @@ func (s *Slim) findRouter(host string) Router {
 
 		// 将 host 转化成 *.example.com 或 *.foo.example.com 的形式，
 		// 然后到虚拟主机表里面查询关联的路由器。
-		if router, ok := s.routers["*."+host[j:]]; ok {
+		// 注意：应使用第一个点后的子串以匹配如 foo.example.com -> *.example.com
+		if router, ok := s.routers["*."+host[i+1:]]; ok {
 			return router
 		}
 	}
