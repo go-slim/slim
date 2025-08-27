@@ -34,6 +34,44 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 		}
 	}
 }
+
+// OPTIONS behavior on same path with/without explicit handler
+func BenchmarkRouter_OPTIONS_WithHandler(b *testing.B) {
+    benchServe(b, func(s *Slim) {
+        s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions}, "/opt", func(c Context) error {
+            if c.Request().Method == http.MethodOptions {
+                return c.NoContent(http.StatusNoContent)
+            }
+            return c.NoContent(http.StatusOK)
+        })
+    }, http.MethodOptions, "/opt", http.StatusNoContent)
+}
+
+func BenchmarkRouter_OPTIONS_WithoutHandler(b *testing.B) {
+    // Register multiple methods but not OPTIONS to trigger 405
+    benchServe(b, func(s *Slim) {
+        s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}, "/opt2", func(c Context) error {
+            return c.NoContent(http.StatusOK)
+        })
+    }, http.MethodOptions, "/opt2", http.StatusMethodNotAllowed)
+}
+
+// VHost with middleware chains on router and collector
+func BenchmarkVHost_Middleware_Chain(b *testing.B) {
+    benchServe(b, func(s *Slim) {
+        // router-level middlewares for vhost
+        rmw := makeNMiddlewares(5)
+        r := s.Host("m.api.example.com", rmw...)
+        // collector-level middlewares
+        r.Route("/api", func(rc RouteCollector) {
+            cmw := makeNMiddlewares(5)
+            if len(cmw) > 0 {
+                rc.Use(cmw...)
+            }
+            rc.GET("/ping", func(c Context) error { return c.NoContent(http.StatusOK) })
+        })
+    }, http.MethodGet, "http://m.api.example.com/api/ping", http.StatusOK)
+}
 func BenchmarkRouter_MultiMethodsSamePath(b *testing.B) {
 	benchServe(b, func(s *Slim) {
 		s.GET("/mm", func(c Context) error { return c.NoContent(http.StatusOK) })
