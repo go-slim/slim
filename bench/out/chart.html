@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Go HTTP 框架基准图表</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, "Microsoft YaHei", sans-serif; margin: 24px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    .desc { color: #666; margin-bottom: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; }
+    .card { border: 1px solid #eee; border-radius: 8px; padding: 12px; flex: 1 1 420px; }
+    .controls { margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .controls select { padding: 6px 8px; }
+    canvas { width: 100%; height: 320px; }
+    .legend { font-size: 12px; color: #555; margin-top: 6px; }
+    code { background: #f7f7f7; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Go HTTP 框架基准图表</h1>
+  <div class="desc">
+    数据来自 <code>bench/out/run_*.txt</code>（包含 Slim/Gin/Echo/Fiber/Chi 等），图表按“用例”维度展示各框架指标：
+    <b>ns/op</b>、<b>B/op</b>、<b>allocs/op</b>。
+  </div>
+  <div class="controls">
+    <label>选择用例：</label>
+    <select id="caseSelect"></select>
+  </div>
+
+  <h2 id="caseTitle" style="margin: 0 0 12px; font-size: 18px; color: #111;">用例：</h2>
+
+  <div class="row">
+    <div class="card">
+      <h3>ns/op（越低越好）</h3>
+      <canvas id="chartNs"></canvas>
+    </div>
+    <div class="card">
+      <h3>B/op（越低越好）</h3>
+      <canvas id="chartB"></canvas>
+    </div>
+    <div class="card">
+      <h3>allocs/op（越低越好）</h3>
+      <canvas id="chartAllocs"></canvas>
+    </div>
+  </div>
+
+  <div class="legend">说明：不同用例的具体含义可参考 <code>slim/bench/*_test.go</code> 注释。</div>
+
+  <div class="card" id="summaryCard" style="margin-top:12px">
+    <h3>当前用例总结</h3>
+    <div id="summary"></div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3>指标说明</h3>
+    <ul>
+      <li><b>ns/op</b>：每次操作平均耗时（纳秒/次），越低越好，直接反映处理一次请求的速度。</li>
+      <li><b>B/op</b>：每次操作平均分配的内存字节数，越低越好，表示单次请求的堆内存分配更少。</li>
+      <li><b>allocs/op</b>：每次操作发生的内存分配次数，越低越好，分配次数越少通常意味着更小的 GC 压力。</li>
+    </ul>
+    <h4>如何解读</h4>
+    <ul>
+      <li><b>性能优先</b>：优先关注 ns/op。</li>
+      <li><b>稳定与可扩展</b>：关注 B/op 与 allocs/op，它们影响 GC 频率与尾延迟。</li>
+      <li><b>趋势</b>：优化后 ns/op 通常会下降；若 ns/op 变好但 B/op/allocs/op 增大，可能以更多分配换取速度，需要结合场景评估。</li>
+    </ul>
+  </div>
+
+  <script>
+    // 数据由生成工具注入
+    const dataByCase = {
+  'Params': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [738.0666666666667,447.7,488.4666666666667,2983.6666666666665,430.43333333333334],
+    bop: [1592,1040,1016,5530,984],
+    allocs: [19,9,10,21,10],
+  },
+  'HEAD_Explicit': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [365.2,126.96666666666665,129.76666666666668,3432.6666666666665,260.56666666666666],
+    bop: [760,208,208,5442,576],
+    allocs: [13,4,4,19,6],
+  },
+  'OPTIONS_Explicit': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [368.90000000000003,127.2,142.4333333333333,3027.6666666666665,272.46666666666664],
+    bop: [760,208,208,5530,576],
+    allocs: [13,4,4,21,6],
+  },
+  'Basic': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [694.9333333333334,436.8,460.6333333333334,2811,296.43333333333334],
+    bop: [1560,1040,1016,5530,644],
+    allocs: [18,9,10,21,8],
+  },
+  'JSON': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [766.2666666666668,520.1,553.8666666666667,2982.3333333333335,654.9333333333334],
+    bop: [1616,1048,1072,5556,1392],
+    allocs: [19,11,11,24,12],
+  },
+  'Middleware10': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [1166.3333333333333,456.06666666666666,639.0666666666666,2945.3333333333335,310.56666666666666],
+    bop: [1944,1040,1176,5530,642],
+    allocs: [32,9,20,21,8],
+  },
+  'Middleware5': {
+    labels: ["Slim","Gin","Echo","Fiber","Chi"],
+    nsop: [870.3000000000001,444.7,532.9,2867,294.23333333333335],
+    bop: [1824,1040,1096,5530,642],
+    allocs: [27,9,15,21,8],
+  },
+};
+
+
+    const caseSelect = document.getElementById('caseSelect');
+    const caseTitle = document.getElementById('caseTitle');
+
+    // 动态填充用例列表
+    const caseNames = Object.keys(dataByCase).sort();
+    for (const c of caseNames) {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      caseSelect.appendChild(opt);
+    }
+
+    const colors = {
+      Slim:   'rgba(59, 130, 246, 0.8)', // blue
+      Gin:    'rgba(34, 197, 94, 0.8)',  // green
+      Echo:   'rgba(234, 179, 8, 0.8)',  // amber
+      Fiber:  'rgba(244, 63, 94, 0.8)',  // rose
+      Chi:    'rgba(168, 85, 247, 0.8)', // purple
+      Unknown:'rgba(107, 114, 128, 0.8)'
+    };
+
+    function colorFor(framework) {
+      return colors[framework] || colors.Unknown;
+    }
+
+    let nsChart, bChart, allocsChart;
+
+    // number formatters
+    const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const nf1 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
+    function makeBarConfig(labels, values, label, fmt, lowerBetter=true, colorByLabel=true) {
+      const data = {
+        labels,
+        datasets: [{
+          label,
+          data: values,
+          backgroundColor: labels.map(l => colorByLabel ? colorFor(l) : 'rgba(59, 130, 246, 0.8)'),
+          borderWidth: 0
+        }]
+      };
+      const options = {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const vals = ctx.dataset.data.map(Number).filter(v => !isNaN(v));
+                const best = vals.length ? Math.min(...vals) : Number(ctx.raw);
+                const val = Number(ctx.raw);
+                let rel = '';
+                if (isFinite(best) && best > 0 && isFinite(val)) {
+                  const ratio = (val / best) - 1;
+                  rel = (Math.abs(ratio) < 1e-9) ? ' (best)' : ` (${ratio >= 0 ? '+' : ''}${nf1.format(ratio * 100)}%)`;
+                }
+                return `${ctx.dataset.label}: ${fmt(val)}${lowerBetter ? rel : ''}`;
+              }
+            }
+          }
+        },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } } }
+      };
+      return { type: 'bar', data, options };
+    }
+
+    function fmtNs(v) { return (v == null ? '-' : `${nf1.format(Number(v))} ns/op`); }
+    function fmtB(v)  { return (v == null ? '-' : `${nf0.format(Number(v))} B/op`); }
+    function fmtA(v)  { return (v == null ? '-' : `${nf0.format(Number(v))} allocs/op`); }
+
+    function update(caseName) {
+      const entry = dataByCase[caseName];
+      if (!entry) return;
+      const labels = entry.labels;
+
+      nsChart?.destroy();
+      bChart?.destroy();
+      allocsChart?.destroy();
+
+      nsChart = new Chart(
+        document.getElementById('chartNs').getContext('2d'),
+        makeBarConfig(labels, entry.nsop, 'ns/op', fmtNs, true)
+      );
+      bChart = new Chart(
+        document.getElementById('chartB').getContext('2d'),
+        makeBarConfig(labels, entry.bop, 'B/op', fmtB, true)
+      );
+      allocsChart = new Chart(
+        document.getElementById('chartAllocs').getContext('2d'),
+        makeBarConfig(labels, entry.allocs, 'allocs/op', fmtA, true)
+      );
+
+      // Summary: best framework and rankings per metric
+      const summary = document.getElementById('summary');
+      function rank(vals, lowerBetter = true) {
+        const arr = labels.map((l, i) => ({ name: l, v: Number(vals[i]) }));
+        arr.sort((a, b) => lowerBetter ? a.v - b.v : b.v - a.v);
+        return arr;
+      }
+      const rNs = rank(entry.nsop, true);
+      const rB  = rank(entry.bop,  true);
+      const rA  = rank(entry.allocs, true);
+      function row(title, r, fmt) {
+        const best = r[0];
+        const list = r.map((x, i) => `${i+1}. ${x.name} (${fmt(x.v)})`).join('， ');
+        return `<li><b>${title}</b>：最佳 <b>${best.name}</b>（${fmt(best.v)}），排名：${list}</li>`;
+      }
+      summary.innerHTML = `<ul>${[
+        row('ns/op', rNs, v => fmtNs(v)),
+        row('B/op',  rB,  v => fmtB(v)),
+        row('allocs/op', rA, v => fmtA(v)),
+      ].join('')}</ul>`;
+    }
+
+    function setTitle(name) {
+      const text = name ? `用例：${name}` : '用例：';
+      caseTitle.textContent = text;
+    }
+
+    caseSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      setTitle(val);
+      update(val);
+    });
+
+    // 初始化：选择第一个用例
+    if (caseNames.length) {
+      caseSelect.value = caseNames[0];
+      setTitle(caseNames[0]);
+      update(caseNames[0]);
+    }
+  </script>
+</body>
+</html>

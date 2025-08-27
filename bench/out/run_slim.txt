@@ -1,0 +1,28 @@
+goos: darwin
+goarch: arm64
+pkg: go-slim.dev/slim-bench
+cpu: Apple M4 Pro
+BenchmarkBasic_Slim            	  334599	       688.2 ns/op	    1560 B/op	      18 allocs/op
+BenchmarkBasic_Slim            	  360987	       708.2 ns/op	    1560 B/op	      18 allocs/op
+BenchmarkBasic_Slim            	  355788	       688.4 ns/op	    1560 B/op	      18 allocs/op
+BenchmarkJSON_Slim             	  309514	       759.1 ns/op	    1616 B/op	      19 allocs/op
+BenchmarkJSON_Slim             	  317524	       763.0 ns/op	    1616 B/op	      19 allocs/op
+BenchmarkJSON_Slim             	  315979	       776.7 ns/op	    1616 B/op	      19 allocs/op
+BenchmarkHEAD_Explicit_Slim    	  634717	       363.1 ns/op	     760 B/op	      13 allocs/op
+BenchmarkHEAD_Explicit_Slim    	  656245	       366.1 ns/op	     760 B/op	      13 allocs/op
+BenchmarkHEAD_Explicit_Slim    	  655654	       366.4 ns/op	     760 B/op	      13 allocs/op
+BenchmarkOPTIONS_Explicit_Slim 	  659431	       369.9 ns/op	     760 B/op	      13 allocs/op
+BenchmarkOPTIONS_Explicit_Slim 	  650060	       367.5 ns/op	     760 B/op	      13 allocs/op
+BenchmarkOPTIONS_Explicit_Slim 	  650104	       369.3 ns/op	     760 B/op	      13 allocs/op
+BenchmarkMiddleware5_Slim      	  279271	       859.3 ns/op	    1824 B/op	      27 allocs/op
+BenchmarkMiddleware5_Slim      	  280486	       856.1 ns/op	    1824 B/op	      27 allocs/op
+BenchmarkMiddleware5_Slim      	  271219	       895.5 ns/op	    1824 B/op	      27 allocs/op
+BenchmarkMiddleware10_Slim     	  206284	      1164 ns/op	    1944 B/op	      32 allocs/op
+BenchmarkMiddleware10_Slim     	  208472	      1173 ns/op	    1944 B/op	      32 allocs/op
+BenchmarkMiddleware10_Slim     	  205636	      1162 ns/op	    1944 B/op	      32 allocs/op
+BenchmarkParams_Slim           	  317080	       749.1 ns/op	    1592 B/op	      19 allocs/op
+BenchmarkParams_Slim           	  327991	       733.2 ns/op	    1592 B/op	      19 allocs/op
+BenchmarkParams_Slim           	  331598	       731.9 ns/op	    1592 B/op	      19 allocs/op
+PASS
+ok  	go-slim.dev/slim-bench	6.910s
+?   	go-slim.dev/slim-bench/cmd/chart	[no test files]

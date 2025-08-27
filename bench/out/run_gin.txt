@@ -1,0 +1,28 @@
+goos: darwin
+goarch: arm64
+pkg: go-slim.dev/slim-bench
+cpu: Apple M4 Pro
+BenchmarkBasic_Gin            	  518863	       436.3 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkBasic_Gin            	  566995	       438.4 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkBasic_Gin            	  547382	       435.7 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkJSON_Gin             	  458832	       533.4 ns/op	    1048 B/op	      11 allocs/op
+BenchmarkJSON_Gin             	  442572	       513.2 ns/op	    1048 B/op	      11 allocs/op
+BenchmarkJSON_Gin             	  470100	       513.7 ns/op	    1048 B/op	      11 allocs/op
+BenchmarkHEAD_Explicit_Gin    	 1940632	       124.1 ns/op	     208 B/op	       4 allocs/op
+BenchmarkHEAD_Explicit_Gin    	 1839663	       128.8 ns/op	     208 B/op	       4 allocs/op
+BenchmarkHEAD_Explicit_Gin    	 1878744	       128.0 ns/op	     208 B/op	       4 allocs/op
+BenchmarkOPTIONS_Explicit_Gin 	 1844989	       129.4 ns/op	     208 B/op	       4 allocs/op
+BenchmarkOPTIONS_Explicit_Gin 	 1896700	       124.9 ns/op	     208 B/op	       4 allocs/op
+BenchmarkOPTIONS_Explicit_Gin 	 1939308	       127.3 ns/op	     208 B/op	       4 allocs/op
+BenchmarkMiddleware5_Gin      	  540628	       441.7 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkMiddleware5_Gin      	  552072	       444.7 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkMiddleware5_Gin      	  546152	       447.7 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkMiddleware10_Gin     	  532741	       457.4 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkMiddleware10_Gin     	  536326	       453.6 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkMiddleware10_Gin     	  533624	       457.2 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkParams_Gin           	  551902	       445.7 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkParams_Gin           	  543759	       447.6 ns/op	    1040 B/op	       9 allocs/op
+BenchmarkParams_Gin           	  553382	       449.8 ns/op	    1040 B/op	       9 allocs/op
+PASS
+ok  	go-slim.dev/slim-bench	6.539s
+?   	go-slim.dev/slim-bench/cmd/chart	[no test files]
