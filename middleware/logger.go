@@ -287,19 +287,18 @@ func (d *defaultLogEntry) Panic(v any, stack []byte) {
 }
 
 func printCategory(buf *[]byte, useColor bool, title string, lines [][]byte) {
-	if len(lines) == 0 {
-		return
-	}
-	*buf = append(*buf, '\n', '\n')
-	if UseLogCategoryMark {
-		*buf = append(*buf, LogCategoryMark...)
-	}
-	cP(buf, useColor, dim, title)
-	*buf = append(*buf, '\n')
-	for _, line := range lines {
-		*buf = fmt.Append(*buf, "\n  ")
-		cP(buf, useColor, nBlue, "%s", line)
-	}
+    if len(lines) == 0 {
+        return
+    }
+    *buf = append(*buf, '\n', '\n')
+    if UseLogCategoryMark {
+        *buf = append(*buf, LogCategoryMark...)
+    }
+    cP(buf, useColor, dim, "%s\n", title)
+    for _, line := range lines {
+        *buf = fmt.Append(*buf, "\n  ")
+        cP(buf, useColor, nBlue, "%s", line)
+    }
 }
 
 func formatError(err error) [][]byte {

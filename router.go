@@ -386,8 +386,8 @@ func (r *routerImpl) File(pattern, file string) Route {
 }
 
 // Remove 通过 `method+pattern` 的组合移除服务端点
-func (r *routerImpl) Remove(methods []string, pattern string) error {
-	segments, trailingSlash := split(pattern)
+func (r *routerImpl) Remove(methods []string, path string) error {
+	segments, trailingSlash := split(path)
 	routes, ok := r.tree.remove(methods, trailingSlash, r.routingTrailingSlash, segments, 0)
 	if !ok {
 		return nil
