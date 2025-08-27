@@ -1,4 +1,5 @@
 # Slim
+[![Slim CI](https://github.com/go-slim/slim/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/go-slim/slim/actions/workflows/ci.yml)
 
 [中文](README.zh-CN.md)
 
@@ -63,11 +64,28 @@ go run .
 
 Full docs, guides, and API reference: https://go-slim.dev
 
-## Testing
+## Testing & CI
+
+Run tests locally:
 
 ```bash
 go test ./...
 ```
+
+Run benchmarks locally (examples):
+
+```bash
+# run all benchmarks with allocations
+go test -run=^$ -bench . -benchmem
+
+# run a specific benchmark
+go test -run=^$ -bench BenchmarkResponse_StaticDir_LargeNested -benchmem
+```
+
+CI:
+
+- GitHub Actions runs tests on every push and PR.
+- Short benchmarks run in CI for `slim` with `-benchtime=100x`.
 
 ## License
 
