@@ -1,4 +1,4 @@
-package nego
+package slim
 
 import (
 	"fmt"
@@ -110,7 +110,7 @@ type Negotiator struct {
 }
 
 // New 返回内容协商器实例
-func New(capacity int, onParse func(accept *Accept)) *Negotiator {
+func NewNegotiator(capacity int, onParse func(accept *Accept)) *Negotiator {
 	if capacity <= 0 {
 		capacity = 10
 	}

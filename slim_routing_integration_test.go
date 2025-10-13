@@ -2,13 +2,10 @@ package slim
 
 import (
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"go-slim.dev/l4g"
 )
 
 // helper error handler that writes a fixed body and status
@@ -22,7 +19,6 @@ func TestIntegration_GlobalMiddlewareErrorUsesAppErrorHandler(t *testing.T) {
 	s := New()
 	// silence logs
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 
 	s.ErrorHandler = ehWrite("app", http.StatusInternalServerError)
 
@@ -49,7 +45,6 @@ func TestIntegration_GlobalMiddlewareErrorUsesAppErrorHandler(t *testing.T) {
 func TestIntegration_CollectorErrorHandlerPreferred(t *testing.T) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 
 	s.Route("/api", func(sub RouteCollector) {
 		sub.UseErrorHandler(ehWrite("collector", http.StatusInternalServerError))
@@ -71,7 +66,6 @@ func TestIntegration_CollectorErrorHandlerPreferred(t *testing.T) {
 func TestIntegration_RouterErrorHandlerWhenNoCollectorHandler(t *testing.T) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 
 	// set router-level error handler
 	if r, ok := s.Router().(*routerImpl); ok {
@@ -97,7 +91,6 @@ func TestIntegration_RouterErrorHandlerWhenNoCollectorHandler(t *testing.T) {
 func TestIntegration_DefaultErrorHandler500(t *testing.T) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 
 	// remove custom error handlers to use DefaultErrorHandler
 	s.ErrorHandler = DefaultErrorHandler
@@ -119,7 +112,6 @@ func TestIntegration_DefaultErrorHandler500(t *testing.T) {
 func TestIntegration_MethodNotAllowed405(t *testing.T) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 
 	s.POST("/m", func(c Context) error { return c.String(http.StatusOK, "posted") })
 

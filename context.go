@@ -17,9 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go-slim.dev/l4g"
-	"go-slim.dev/slim/nego"
 )
 
 // Context 网络请求上下文，包含了请求数据（路径、路径参数、载荷）
@@ -35,10 +32,6 @@ type Context interface {
 	Response() ResponseWriter
 	// SetResponse 为上下文设置新的 `http.ResponseWriter` 实现
 	SetResponse(r ResponseWriter)
-	// Logger returns the `Logger` instance.
-	Logger() l4g.Logger
-	// SetLogger Set the logger
-	SetLogger(logger l4g.Logger)
 	// Filesystem returns `fs.FS`.
 	Filesystem() fs.FS
 	// SetFilesystem sets `fs.FS`
@@ -206,8 +199,7 @@ type contextImpl struct {
 	// currentParams hold path parameters set by non-Slim implementation (custom middlewares, handlers) during the lifetime of Request.
 	// Lifecycle is not handle by Slim and could have excess allocations per served Request
 	currentParams PathParams
-	negotiator    *nego.Negotiator
-	logger        l4g.Logger
+	negotiator    *Negotiator
 	query         url.Values
 	store         map[string]any
 	slim          *Slim
@@ -266,7 +258,6 @@ func (x *contextImpl) Reset(w http.ResponseWriter, r *http.Request) {
 	// NOTE: Don't reset because it has to have length c.slim.contextPathParamAllocSize at all times
 	*x.pathParams = (*x.pathParams)[:0]
 	x.currentParams = nil
-	x.logger = nil
 	x.query = nil
 	x.store = nil
 }
@@ -298,17 +289,6 @@ func (x *contextImpl) SetResponse(w ResponseWriter) {
 	x.response = w
 }
 
-func (x *contextImpl) Logger() l4g.Logger {
-	if x.logger != nil {
-		return x.logger
-	}
-	return x.slim.Logger
-}
-
-func (x *contextImpl) SetLogger(l l4g.Logger) {
-	x.logger = l
-}
-
 // Filesystem returns `fs.FS`.
 func (x *contextImpl) Filesystem() fs.FS {
 	if x.filesystem != nil {
@@ -329,7 +309,7 @@ func (x *contextImpl) IsTLS() bool {
 
 // IsWebSocket returns true if HTTP connection is WebSocket otherwise false.
 func (x *contextImpl) IsWebSocket() bool {
-	upgrade := x.request.Header.Get(nego.HeaderUpgrade)
+	upgrade := x.request.Header.Get(HeaderUpgrade)
 	return strings.EqualFold(upgrade, "websocket")
 }
 
@@ -339,16 +319,16 @@ func (x *contextImpl) Scheme() string {
 	if x.IsTLS() {
 		return "https"
 	}
-	if scheme := x.request.Header.Get(nego.HeaderXForwardedProto); scheme != "" {
+	if scheme := x.request.Header.Get(HeaderXForwardedProto); scheme != "" {
 		return scheme
 	}
-	if scheme := x.request.Header.Get(nego.HeaderXForwardedProtocol); scheme != "" {
+	if scheme := x.request.Header.Get(HeaderXForwardedProtocol); scheme != "" {
 		return scheme
 	}
-	if ssl := x.request.Header.Get(nego.HeaderXForwardedSsl); ssl == "on" {
+	if ssl := x.request.Header.Get(HeaderXForwardedSsl); ssl == "on" {
 		return "https"
 	}
-	if scheme := x.request.Header.Get(nego.HeaderXUrlScheme); scheme != "" {
+	if scheme := x.request.Header.Get(HeaderXUrlScheme); scheme != "" {
 		return scheme
 	}
 	return "http"
@@ -359,7 +339,7 @@ func (x *contextImpl) RealIP() string {
 		return x.slim.IPExtractor(x.request)
 	}
 	// Fall back to legacy behavior
-	if ip := x.request.Header.Get(nego.HeaderXForwardedFor); ip != "" {
+	if ip := x.request.Header.Get(HeaderXForwardedFor); ip != "" {
 		i := strings.IndexAny(ip, ",")
 		if i > 0 {
 			xffip := strings.TrimSpace(ip[:i])
@@ -369,7 +349,7 @@ func (x *contextImpl) RealIP() string {
 		}
 		return ip
 	}
-	if ip := x.request.Header.Get(nego.HeaderXRealIP); ip != "" {
+	if ip := x.request.Header.Get(HeaderXRealIP); ip != "" {
 		ip = strings.TrimPrefix(ip, "[")
 		ip = strings.TrimSuffix(ip, "]")
 		return ip
@@ -383,7 +363,7 @@ func (x *contextImpl) RequestURI() string {
 }
 
 func (x *contextImpl) Is(types ...string) string {
-	typ, _ := nego.TypeIs(x.Header("Content-Type"), types...)
+	typ, _ := TypeIs(x.Header("Content-Type"), types...)
 	return typ
 }
 
@@ -491,7 +471,7 @@ func (x *contextImpl) FormValue(name string) string {
 }
 
 func (x *contextImpl) FormParams() (url.Values, error) {
-	if strings.HasPrefix(x.request.Header.Get(nego.HeaderContentType), nego.MIMEMultipartForm) {
+	if strings.HasPrefix(x.request.Header.Get(HeaderContentType), MIMEMultipartForm) {
 		err := x.request.ParseMultipartForm(x.slim.MultipartMemoryLimit)
 		if err != nil {
 			return nil, err
@@ -584,8 +564,8 @@ func (x *contextImpl) Written() bool {
 func (x *contextImpl) writeContentType(value string) {
 	if value != "" {
 		header := x.response.Header()
-		if header.Get(nego.HeaderContentType) == "" {
-			header.Set(nego.HeaderContentType, value)
+		if header.Get(HeaderContentType) == "" {
+			header.Set(HeaderContentType, value)
 		}
 	}
 }
@@ -619,12 +599,12 @@ func (x *contextImpl) HTML(code int, html string) error {
 
 // HTMLBlob sends an HTTP blob response with status code.
 func (x *contextImpl) HTMLBlob(code int, b []byte) error {
-	return x.Blob(code, nego.MIMETextHTMLCharsetUTF8, b)
+	return x.Blob(code, MIMETextHTMLCharsetUTF8, b)
 }
 
 // String sends a string response with status code.
 func (x *contextImpl) String(code int, s string) error {
-	return x.Blob(code, nego.MIMETextPlainCharsetUTF8, []byte(s))
+	return x.Blob(code, MIMETextPlainCharsetUTF8, []byte(s))
 }
 
 // JSON sends a JSON response with status code.
@@ -634,25 +614,25 @@ func (x *contextImpl) JSON(code int, i any) error {
 
 // JSONPretty sends a pretty-print JSON with status code.
 func (x *contextImpl) JSONPretty(code int, i any, indent string) error {
-	x.writeContentType(nego.MIMEApplicationJSONCharsetUTF8)
+	x.writeContentType(MIMEApplicationJSONCharsetUTF8)
 	x.response.WriteHeader(code)
-	return x.slim.JSONSerializer.Serialize(x.response, i, indent)
+	return x.slim.JSONCodec.Encode(x.response, i, indent)
 }
 
 // JSONBlob sends a JSON blob response with status code.
 func (x *contextImpl) JSONBlob(code int, b []byte) error {
-	return x.Blob(code, nego.MIMEApplicationJSONCharsetUTF8, b)
+	return x.Blob(code, MIMEApplicationJSONCharsetUTF8, b)
 }
 
 // JSONP sends a JSONP response with status code. It uses `callback` to construct
 // the JSONP payload.
 func (x *contextImpl) JSONP(code int, callback string, i any) error {
-	x.writeContentType(nego.MIMEApplicationJavaScriptCharsetUTF8)
+	x.writeContentType(MIMEApplicationJavaScriptCharsetUTF8)
 	x.response.WriteHeader(code)
 	if _, err := x.response.Write([]byte(callback + "(")); err != nil {
 		return err
 	}
-	if err := x.slim.JSONSerializer.Serialize(x.response, i, x.prettyIndent()); err != nil {
+	if err := x.slim.JSONCodec.Encode(x.response, i, x.prettyIndent()); err != nil {
 		return err
 	}
 	if _, err := x.response.Write([]byte(");")); err != nil {
@@ -664,7 +644,7 @@ func (x *contextImpl) JSONP(code int, callback string, i any) error {
 // JSONPBlob sends a JSONP blob response with status code. It uses `callback`
 // to construct the JSONP payload.
 func (x *contextImpl) JSONPBlob(code int, callback string, b []byte) error {
-	x.writeContentType(nego.MIMEApplicationJavaScriptCharsetUTF8)
+	x.writeContentType(MIMEApplicationJavaScriptCharsetUTF8)
 	x.response.WriteHeader(code)
 	if _, err := x.response.Write([]byte(callback + "(")); err != nil {
 		return err
@@ -683,17 +663,17 @@ func (x *contextImpl) XML(code int, i any) error {
 
 // XMLPretty sends a pretty-print XML with status code.
 func (x *contextImpl) XMLPretty(code int, i any, indent string) error {
-	x.writeContentType(nego.MIMEApplicationXMLCharsetUTF8)
+	x.writeContentType(MIMEApplicationXMLCharsetUTF8)
 	x.response.WriteHeader(code)
 	if _, err := x.response.Write([]byte(xml.Header)); err != nil {
 		return err
 	}
-	return x.slim.XMLSerializer.Serialize(x.response, i, indent)
+	return x.slim.XMLCodec.Encode(x.response, i, indent)
 }
 
 // XMLBlob sends an XML blob response with status code.
 func (x *contextImpl) XMLBlob(code int, b []byte) error {
-	x.writeContentType(nego.MIMEApplicationXMLCharsetUTF8)
+	x.writeContentType(MIMEApplicationXMLCharsetUTF8)
 	x.response.WriteHeader(code)
 	_, err := x.response.Write([]byte(xml.Header))
 	if err == nil {
@@ -776,7 +756,7 @@ func (x *contextImpl) Inline(file string, name string) error {
 }
 
 func (x *contextImpl) contentDisposition(file, name, dispositionType string) error {
-	x.SetHeader(nego.HeaderContentDisposition, fmt.Sprintf("%s; filename=%q", dispositionType, name))
+	x.SetHeader(HeaderContentDisposition, fmt.Sprintf("%s; filename=%q", dispositionType, name))
 	return x.File(file)
 }
 

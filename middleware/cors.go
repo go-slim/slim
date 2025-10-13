@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"go-slim.dev/slim"
-	"go-slim.dev/slim/nego"
 )
 
 // CORSConfig defines the config for CORS middleware.
@@ -87,11 +86,11 @@ func CORSWithConfig(config CORSConfig) slim.MiddlewareFunc {
 	return func(c slim.Context, next slim.HandlerFunc) error {
 		req := c.Request()
 		res := c.Response()
-		origin := req.Header.Get(nego.HeaderOrigin)
+		origin := req.Header.Get(slim.HeaderOrigin)
 		allowOrigin := ""
 
 		preflight := req.Method == http.MethodOptions
-		res.Header().Add(nego.HeaderVary, nego.HeaderOrigin)
+		res.Header().Add(slim.HeaderVary, slim.HeaderOrigin)
 
 		// No Origin provided
 		if origin == "" {
@@ -157,34 +156,34 @@ func CORSWithConfig(config CORSConfig) slim.MiddlewareFunc {
 
 		// Simple request
 		if !preflight {
-			res.Header().Set(nego.HeaderAccessControlAllowOrigin, allowOrigin)
+			res.Header().Set(slim.HeaderAccessControlAllowOrigin, allowOrigin)
 			if config.AllowCredentials {
-				res.Header().Set(nego.HeaderAccessControlAllowCredentials, "true")
+				res.Header().Set(slim.HeaderAccessControlAllowCredentials, "true")
 			}
 			if exposeHeaders != "" {
-				res.Header().Set(nego.HeaderAccessControlExposeHeaders, exposeHeaders)
+				res.Header().Set(slim.HeaderAccessControlExposeHeaders, exposeHeaders)
 			}
 			return next(c)
 		}
 
 		// Preflight request
-		res.Header().Add(nego.HeaderVary, nego.HeaderAccessControlRequestMethod)
-		res.Header().Add(nego.HeaderVary, nego.HeaderAccessControlRequestHeaders)
-		res.Header().Set(nego.HeaderAccessControlAllowOrigin, allowOrigin)
-		res.Header().Set(nego.HeaderAccessControlAllowMethods, allowMethods)
+		res.Header().Add(slim.HeaderVary, slim.HeaderAccessControlRequestMethod)
+		res.Header().Add(slim.HeaderVary, slim.HeaderAccessControlRequestHeaders)
+		res.Header().Set(slim.HeaderAccessControlAllowOrigin, allowOrigin)
+		res.Header().Set(slim.HeaderAccessControlAllowMethods, allowMethods)
 		if config.AllowCredentials {
-			res.Header().Set(nego.HeaderAccessControlAllowCredentials, "true")
+			res.Header().Set(slim.HeaderAccessControlAllowCredentials, "true")
 		}
 		if allowHeaders != "" {
-			res.Header().Set(nego.HeaderAccessControlAllowHeaders, allowHeaders)
+			res.Header().Set(slim.HeaderAccessControlAllowHeaders, allowHeaders)
 		} else {
-			h := req.Header.Get(nego.HeaderAccessControlRequestHeaders)
+			h := req.Header.Get(slim.HeaderAccessControlRequestHeaders)
 			if h != "" {
-				res.Header().Set(nego.HeaderAccessControlAllowHeaders, h)
+				res.Header().Set(slim.HeaderAccessControlAllowHeaders, h)
 			}
 		}
 		if config.MaxAge > 0 {
-			res.Header().Set(nego.HeaderAccessControlMaxAge, maxAge)
+			res.Header().Set(slim.HeaderAccessControlMaxAge, maxAge)
 		}
 		return c.NoContent(http.StatusNoContent)
 	}

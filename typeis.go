@@ -1,4 +1,4 @@
-package nego
+package slim
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func parseContentType(s string) (*ctype, error) {
 	typeSubtype := strings.Split(rangeParams[0], "/")
 	// typeSubtype should have a length of exactly two.
 	if len(typeSubtype) > 2 {
-		return nil, fmt.Errorf("slim/nego: invalid content type '%s'", s)
+		return nil, fmt.Errorf("slim: invalid content type '%s'", s)
 	} else {
 		typeSubtype = append(typeSubtype, "*")
 	}
@@ -36,7 +36,7 @@ func parseContentType(s string) (*ctype, error) {
 	main := strings.TrimSpace(typeSubtype[0])
 	sub := strings.TrimSpace(typeSubtype[1])
 	if main == "" {
-		return nil, fmt.Errorf("slim/nego: invalid content type '%s'", s)
+		return nil, fmt.Errorf("slim: invalid content type '%s'", s)
 	} else {
 		main = strings.ToLower(strings.TrimSpace(main))
 	}
@@ -54,7 +54,7 @@ func TypeIs(value string, types ...string) (string, error) {
 		return "", err
 	}
 	if cty.sub == "*" {
-		return "", fmt.Errorf("slim/nego: invalid content type '%s'", value)
+		return "", fmt.Errorf("slim: invalid content type '%s'", value)
 	}
 	for _, typ := range types {
 		s := typ

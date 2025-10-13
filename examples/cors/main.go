@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"go-slim.dev/slim"
@@ -23,5 +24,5 @@ func main() {
 		return c.String(http.StatusOK, "CORS OK")
 	})
 
-	s.Logger.Fatal(s.Start(":1325"))
+	log.Fatal(s.Start(":1325"))
 }

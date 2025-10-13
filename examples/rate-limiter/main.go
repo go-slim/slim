@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"go-slim.dev/slim"
@@ -28,5 +29,5 @@ func main() {
 		return c.String(http.StatusOK, "ok")
 	})
 
-	s.Logger.Fatal(s.Start(":1326"))
+	log.Fatal(s.Start(":1326"))
 }

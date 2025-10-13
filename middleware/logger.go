@@ -7,11 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"maps"
 	"sync"
 	"time"
 
 	"go-slim.dev/slim"
-	"go-slim.dev/slim/nego"
 )
 
 var (
@@ -33,7 +34,10 @@ type LoggerConfig struct {
 var DefaultLoggerConfig = LoggerConfig{
 	TimeLayout: "2006/01/02 15:04:05.000",
 	NewEntry: func(c slim.Context) LogEntry {
-		return NewLogEntry(c.Logger().Output())
+		if l := c.Slim().StdLogger; l == nil {
+			return NewLogEntry(l.Writer())
+		}
+		return NewLogEntry(log.Writer())
 	},
 }
 
@@ -176,9 +180,7 @@ func LogEnd(c slim.Context, err error) {
 	if !ok || entry == nil {
 		entry = DefaultLoggerConfig.NewEntry(c)
 	}
-	for key, val := range entry.End(c, err) {
-		p.Extra[key] = val
-	}
+	maps.Copy(p.Extra, entry.End(c, err))
 
 	// prints the log payload.
 	entry.Print(c, p)
@@ -234,7 +236,7 @@ func (d *defaultLogEntry) Print(c slim.Context, p LogPayload) {
 		cP(buf, useColor, nCyan, "%s ", p.StartTime.Format("2006/01/02 15:04:05.000"))
 	}
 
-	reqID := c.Header(nego.HeaderXRequestID)
+	reqID := c.Header(slim.HeaderXRequestID)
 	if reqID != "" {
 		cP(buf, useColor, nYellow, "[%s] ", reqID)
 	}
@@ -279,6 +281,8 @@ func (d *defaultLogEntry) Print(c slim.Context, p LogPayload) {
 		printCategory(buf, useColor, "Additional data:", lines)
 	}
 
+	*buf = append(*buf, '\n')
+
 	d.w.Write(*buf)
 }
 
@@ -287,18 +291,18 @@ func (d *defaultLogEntry) Panic(v any, stack []byte) {
 }
 
 func printCategory(buf *[]byte, useColor bool, title string, lines [][]byte) {
-    if len(lines) == 0 {
-        return
-    }
-    *buf = append(*buf, '\n', '\n')
-    if UseLogCategoryMark {
-        *buf = append(*buf, LogCategoryMark...)
-    }
-    cP(buf, useColor, dim, "%s\n", title)
-    for _, line := range lines {
-        *buf = fmt.Append(*buf, "\n  ")
-        cP(buf, useColor, nBlue, "%s", line)
-    }
+	if len(lines) == 0 {
+		return
+	}
+	*buf = append(*buf, '\n', '\n')
+	if UseLogCategoryMark {
+		*buf = append(*buf, LogCategoryMark...)
+	}
+	cP(buf, useColor, dim, "%s\n", title)
+	for _, line := range lines {
+		*buf = fmt.Append(*buf, "\n  ")
+		cP(buf, useColor, nBlue, "%s", line)
+	}
 }
 
 func formatError(err error) [][]byte {

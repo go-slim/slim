@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -13,10 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go-slim.dev/l4g"
-	"go-slim.dev/slim/nego"
-	"go-slim.dev/slim/serde"
 
 	"github.com/fatih/color"
 	"golang.org/x/crypto/acme"
@@ -124,7 +121,7 @@ type Slim struct {
 	// contextPathParamAllocSize 上下文中参数的最大数量
 	contextPathParamAllocSize int
 
-	negotiator *nego.Negotiator
+	negotiator *Negotiator
 
 	NewContextFunc       func(pathParamAllocSize int) EditableContext // 自定义 `slim.Context` 构造函数
 	ErrorHandler         ErrorHandlerFunc
@@ -132,15 +129,14 @@ type Slim struct {
 	Binder               Binder
 	Validator            Validator
 	Renderer             Renderer // 自定义模板渲染器
-	JSONSerializer       serde.Serializer
-	XMLSerializer        serde.Serializer
-	Logger               l4g.Logger
+	JSONCodec            Codec
+	XMLCodec             Codec
 	Server               *http.Server
 	TLSServer            *http.Server
 	Listener             net.Listener
 	TLSListener          net.Listener
-	StdLogger            *log.Logger
 	AutoTLSManager       autocert.Manager
+	StdLogger            *log.Logger
 	DisableHTTP2         bool
 	HideBanner           bool
 	HidePort             bool
@@ -155,20 +151,20 @@ type Slim struct {
 func New() *Slim {
 	s := &Slim{
 		routers:              make(map[string]Router),
-		negotiator:           nego.New(10, nil),
+		negotiator:           NewNegotiator(10, nil),
 		Server:               new(http.Server),
 		TLSServer:            new(http.Server),
 		AutoTLSManager:       autocert.Manager{Prompt: autocert.AcceptTOS},
 		ListenerNetwork:      "tcp",
+		StdLogger:            log.Default(),
 		NewContextFunc:       nil,
 		ErrorHandler:         DefaultErrorHandler,
 		Filesystem:           os.DirFS("."),
 		Binder:               &DefaultBinder{},
 		Validator:            nil,
 		Renderer:             nil,
-		JSONSerializer:       serde.JSONSerializer{},
-		XMLSerializer:        serde.XMLSerializer{},
-		Logger:               l4g.New(os.Stdout),
+		JSONCodec:            JSONCodec{},
+		XMLCodec:             XMLCodec{},
 		Debug:                true,
 		MultipartMemoryLimit: 32 << 20, // 32 MB
 		PrettyIndent:         "  ",
@@ -360,12 +356,12 @@ func (s *Slim) Routes() []Route {
 }
 
 // Negotiator 返回内容协商工具
-func (s *Slim) Negotiator() *nego.Negotiator {
+func (s *Slim) Negotiator() *Negotiator {
 	return s.negotiator
 }
 
 // SetNegotiator 设置自定义内容协商工具
-func (s *Slim) SetNegotiator(negotiator *nego.Negotiator) {
+func (s *Slim) SetNegotiator(negotiator *Negotiator) {
 	s.negotiator = negotiator
 }
 
@@ -428,7 +424,7 @@ func (s *Slim) findRouterByRequest(r *http.Request) Router {
 		// 由于后者已经成为既成标准了。
 		// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Forwarded
 		if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
-			for _, forwardedPair := range strings.Split(forwarded, ";") {
+			for forwardedPair := range strings.SplitSeq(forwarded, ";") {
 				if tv := strings.SplitN(forwardedPair, "=", 2); len(tv) == 2 {
 					token, value := tv[0], tv[1]
 					token = strings.TrimSpace(token)
@@ -555,7 +551,7 @@ func (s *Slim) Start(address string) error {
 // StartTLS starts an HTTPS server.
 // If `certFile` or `keyFile` is `string`, the values are treated as file paths.
 // If `certFile` or `keyFile` is `[]byte`, the values are treated as the certificate or key as-is.
-func (s *Slim) StartTLS(address string, certFile, keyFile interface{}) (err error) {
+func (s *Slim) StartTLS(address string, certFile, keyFile any) (err error) {
 	s.startupMutex.Lock()
 	var cert []byte
 	if cert, err = filepathOrContent(certFile); err != nil {
@@ -586,7 +582,7 @@ func (s *Slim) StartTLS(address string, certFile, keyFile interface{}) (err erro
 	return srv.Serve(s.TLSListener)
 }
 
-func filepathOrContent(fileOrContent interface{}) (content []byte, err error) {
+func filepathOrContent(fileOrContent any) (content []byte, err error) {
 	switch v := fileOrContent.(type) {
 	case string:
 		return os.ReadFile(v)
@@ -637,17 +633,21 @@ func (s *Slim) StartServer(srv *http.Server) (err error) {
 	return srv.Serve(s.Listener)
 }
 
+func (s *Slim) output() io.Writer {
+	if s.StdLogger != nil {
+		return s.StdLogger.Writer()
+	}
+	return io.Discard
+}
+
 func (s *Slim) configureServer(srv *http.Server) error {
 	// Setup
-	l := s.Logger.Output()
+	w := s.output()
 	srv.ErrorLog = s.StdLogger
 	srv.Handler = s
-	if s.Debug && !s.Logger.Enabled(l4g.LevelDebug) {
-		s.Logger.SetLevel(l4g.LevelDebug)
-	}
 
 	if !s.HideBanner {
-		fmt.Fprintf(l, banner, color.HiRedString("v"+Version), color.HiBlueString(website))
+		fmt.Fprintf(w, banner, color.HiRedString("v"+Version), color.HiBlueString(website))
 	}
 
 	if srv.TLSConfig == nil {
@@ -659,7 +659,7 @@ func (s *Slim) configureServer(srv *http.Server) error {
 			s.Listener = l
 		}
 		if !s.HidePort {
-			fmt.Fprintf(l, "⇨ http server started on %s\n", color.HiGreenString(s.Listener.Addr().String()))
+			fmt.Fprintf(w, "⇨ http server started on %s\n", color.HiGreenString(s.Listener.Addr().String()))
 		}
 		return nil
 	}
@@ -671,7 +671,7 @@ func (s *Slim) configureServer(srv *http.Server) error {
 		s.TLSListener = tls.NewListener(l, srv.TLSConfig)
 	}
 	if !s.HidePort {
-		fmt.Fprintf(l, "⇨ http server started on %s\n", color.HiGreenString(s.TLSListener.Addr().String()))
+		fmt.Fprintf(w, "⇨ http server started on %s\n", color.HiGreenString(s.TLSListener.Addr().String()))
 	}
 	return nil
 }
@@ -700,17 +700,14 @@ func (s *Slim) TLSListenerAddr() net.Addr {
 func (s *Slim) StartH2CServer(address string, h2s *http2.Server) error {
 	s.startupMutex.Lock()
 	// Setup
-	l := s.Logger.Output()
+	w := s.output()
 	srv := s.Server
 	srv.Addr = address
 	srv.ErrorLog = s.StdLogger
 	srv.Handler = h2c.NewHandler(s, h2s)
-	if s.Debug && !s.Logger.Enabled(l4g.LevelDebug) {
-		s.Logger.SetLevel(l4g.LevelDebug)
-	}
 
 	if !s.HideBanner {
-		fmt.Fprintf(l, banner, color.HiRedString("v"+Version), color.HiBlueString(website))
+		fmt.Fprintf(w, banner, color.HiRedString("v"+Version), color.HiBlueString(website))
 	}
 
 	if s.Listener == nil {
@@ -722,7 +719,7 @@ func (s *Slim) StartH2CServer(address string, h2s *http2.Server) error {
 		s.Listener = l
 	}
 	if !s.HidePort {
-		fmt.Fprintf(l, "⇨ http server started on %s\n", color.HiGreenString(s.Listener.Addr().String()))
+		fmt.Fprintf(w, "⇨ http server started on %s\n", color.HiGreenString(s.Listener.Addr().String()))
 	}
 	s.startupMutex.Unlock()
 	return srv.Serve(s.Listener)
@@ -821,7 +818,7 @@ func Tap(h HandlerFunc, mw ...MiddlewareFunc) HandlerFunc {
 // DefaultErrorHandler 默认错误处理函数
 func DefaultErrorHandler(c Context, err error) {
 	if c.Written() {
-		logError(c, err)
+		fmt.Fprintf(c.Slim().output(), "Error: %v\n", err)
 		return
 	}
 	// TODO(hupeh): 根据 Accept 报头返回对应的格式
@@ -832,12 +829,6 @@ func DefaultErrorHandler(c Context, err error) {
 		http.Error(c.Response(), http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 	} else {
 		http.Error(c.Response(), err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func logError(c Context, err error) {
-	if c.Slim().Debug {
-		c.Logger().Error(err)
 	}
 }
 

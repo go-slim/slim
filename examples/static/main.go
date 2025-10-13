@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"path/filepath"
 
@@ -17,5 +18,5 @@ func main() {
 	// Fallback API route
 	s.GET("/ping", func(c slim.Context) error { return c.String(http.StatusOK, "pong") })
 
-	s.Logger.Fatal(s.Start(":1329"))
+	log.Fatal(s.Start(":1329"))
 }

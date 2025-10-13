@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"go-slim.dev/slim"
@@ -35,5 +36,5 @@ func main() {
 		panic("boom")
 	})
 
-	s.Logger.Fatal(s.Start(":1327"))
+	log.Fatal(s.Start(":1327"))
 }

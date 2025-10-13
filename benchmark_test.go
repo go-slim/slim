@@ -1,15 +1,13 @@
 package slim
 
 import (
-    "bytes"
-    "io"
-    "net/http"
-    "net/http/httptest"
-    "os"
-    "path/filepath"
-    "testing"
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
 
-	"go-slim.dev/l4g"
 	"strconv"
 	"strings"
 )
@@ -21,7 +19,6 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 	s := New()
 	// Silence logs to avoid benchmark noise
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 
 	setup(s)
 
@@ -39,214 +36,229 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 
 // benchServeParallel runs requests in parallel to stress concurrency
 func benchServeParallel(b *testing.B, setup func(s *Slim), method, path string, want int) {
-    b.Helper()
+	b.Helper()
 
-    s := New()
-    s.StdLogger = nil
-    s.Logger = l4g.New(io.Discard)
+	s := New()
+	s.StdLogger = nil
 
-    setup(s)
+	setup(s)
 
-    b.ReportAllocs()
-    b.ResetTimer()
-    b.RunParallel(func(pb *testing.PB) {
-        for pb.Next() {
-            rr := httptest.NewRecorder()
-            req := httptest.NewRequest(method, path, nil)
-            s.ServeHTTP(rr, req)
-            if rr.Code != want {
-                b.Fatalf("unexpected status: got=%d want=%d", rr.Code, want)
-            }
-        }
-    })
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(method, path, nil)
+			s.ServeHTTP(rr, req)
+			if rr.Code != want {
+				b.Fatalf("unexpected status: got=%d want=%d", rr.Code, want)
+			}
+		}
+	})
 }
 
 // HEAD should be handled implicitly by GET when no explicit HEAD handler is registered
 func BenchmarkRouter_HEAD_ImplicitViaGET(b *testing.B) {
-    benchServe(b, func(s *Slim) {
-        s.GET("/head", func(c Context) error { return c.NoContent(http.StatusOK) })
-    }, http.MethodHead, "/head", http.StatusMethodNotAllowed)
+	benchServe(b, func(s *Slim) {
+		s.GET("/head", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodHead, "/head", http.StatusMethodNotAllowed)
 }
 
 // HEAD with explicit handler
 func BenchmarkRouter_HEAD_Explicit(b *testing.B) {
-    benchServe(b, func(s *Slim) {
-        s.HEAD("/head2", func(c Context) error { return c.NoContent(http.StatusOK) })
-    }, http.MethodHead, "/head2", http.StatusOK)
+	benchServe(b, func(s *Slim) {
+		s.HEAD("/head2", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodHead, "/head2", http.StatusOK)
 }
 
 // HEAD with both GET and HEAD registered on same path
 func BenchmarkRouter_HEAD_WithGETSamePath(b *testing.B) {
-    benchServe(b, func(s *Slim) {
-        s.GET("/head3", func(c Context) error { return c.NoContent(http.StatusOK) })
-        s.HEAD("/head3", func(c Context) error { return c.NoContent(http.StatusOK) })
-    }, http.MethodHead, "/head3", http.StatusOK)
+	benchServe(b, func(s *Slim) {
+		s.GET("/head3", func(c Context) error { return c.NoContent(http.StatusOK) })
+		s.HEAD("/head3", func(c Context) error { return c.NoContent(http.StatusOK) })
+	}, http.MethodHead, "/head3", http.StatusOK)
 }
 
 // Vhost + Static middleware, HEAD request to nested file
 func BenchmarkVhost_Static_HEAD_Nested(b *testing.B) {
-    // Prepare vhost static directory tree
-    cwd, err := os.Getwd()
-    if err != nil { b.Fatal(err) }
-    absRoot, err := os.MkdirTemp(cwd, "slim-bench-vhost-static-*")
-    if err != nil { b.Fatal(err) }
-    b.Cleanup(func() { os.RemoveAll(absRoot) })
+	// Prepare vhost static directory tree
+	cwd, err := os.Getwd()
+	if err != nil {
+		b.Fatal(err)
+	}
+	absRoot, err := os.MkdirTemp(cwd, "slim-bench-vhost-static-*")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { os.RemoveAll(absRoot) })
 
-    nested := filepath.Join(absRoot, "a", "b")
-    if err := os.MkdirAll(nested, 0o755); err != nil { b.Fatal(err) }
-    data := bytes.Repeat([]byte("x"), 1<<20)
-    if err := os.WriteFile(filepath.Join(nested, "c.txt"), data, 0o644); err != nil { b.Fatal(err) }
+	nested := filepath.Join(absRoot, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		b.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("x"), 1<<20)
+	if err := os.WriteFile(filepath.Join(nested, "c.txt"), data, 0o644); err != nil {
+		b.Fatal(err)
+	}
 
-    s := New()
-    s.StdLogger = nil
-    s.Logger = l4g.New(io.Discard)
+	s := New()
+	s.StdLogger = nil
 
-    // vhost with static
-    vh := s.Host("v1.local")
-    vh.Use(Static(absRoot))
+	// vhost with static
+	vh := s.Host("v1.local")
+	vh.Use(Static(absRoot))
 
-    req := httptest.NewRequest(http.MethodHead, "/a/b/c.txt", nil)
-    req.Host = "v1.local"
+	req := httptest.NewRequest(http.MethodHead, "/a/b/c.txt", nil)
+	req.Host = "v1.local"
 
-    b.ReportAllocs()
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        rr := httptest.NewRecorder()
-        s.ServeHTTP(rr, req)
-        if rr.Code != http.StatusOK {
-            b.Fatalf("unexpected status: got=%d want=%d", rr.Code, http.StatusOK)
-        }
-    }
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		s.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			b.Fatalf("unexpected status: got=%d want=%d", rr.Code, http.StatusOK)
+		}
+	}
 }
 
 // OPTIONS 405 should include Allow header with supported methods
 func BenchmarkRouter_OPTIONS_AllowHeader(b *testing.B) {
-    s := New()
-    s.StdLogger = nil
-    s.Logger = l4g.New(io.Discard)
-    // Register methods but exclude OPTIONS to trigger 405
-    s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}, "/opt3", func(c Context) error { return c.NoContent(http.StatusOK) })
+	s := New()
+	s.StdLogger = nil
+	// Register methods but exclude OPTIONS to trigger 405
+	s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}, "/opt3", func(c Context) error { return c.NoContent(http.StatusOK) })
 
-    req := httptest.NewRequest(http.MethodOptions, "/opt3", nil)
-    b.ReportAllocs()
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        rr := httptest.NewRecorder()
-        s.ServeHTTP(rr, req)
-        if rr.Code != http.StatusMethodNotAllowed {
-            b.Fatalf("unexpected status: %d", rr.Code)
-        }
-        ah := rr.Header().Get("Allow")
-        if ah == "" {
-            b.Fatalf("missing Allow header")
-        }
-    }
+	req := httptest.NewRequest(http.MethodOptions, "/opt3", nil)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		s.ServeHTTP(rr, req)
+		if rr.Code != http.StatusMethodNotAllowed {
+			b.Fatalf("unexpected status: %d", rr.Code)
+		}
+		ah := rr.Header().Get("Allow")
+		if ah == "" {
+			b.Fatalf("missing Allow header")
+		}
+	}
 }
 
 // Static directory serving with nested paths
 func BenchmarkResponse_StaticDir_LargeNested(b *testing.B) {
-    // Create static tree under current working directory to keep paths relative for default Filesystem
-    cwd, err := os.Getwd()
-    if err != nil { b.Fatal(err) }
-    absRoot, err := os.MkdirTemp(cwd, "slim-bench-static-*")
-    if err != nil { b.Fatal(err) }
-    b.Cleanup(func() { os.RemoveAll(absRoot) })
+	// Create static tree under current working directory to keep paths relative for default Filesystem
+	cwd, err := os.Getwd()
+	if err != nil {
+		b.Fatal(err)
+	}
+	absRoot, err := os.MkdirTemp(cwd, "slim-bench-static-*")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { os.RemoveAll(absRoot) })
 
-    nested := filepath.Join(absRoot, "a", "b")
-    if err := os.MkdirAll(nested, 0o755); err != nil { b.Fatal(err) }
-    data := bytes.Repeat([]byte("y"), 1<<20) // 1MB file
-    file := filepath.Join(nested, "c.txt")
-    if err := os.WriteFile(file, data, 0o644); err != nil { b.Fatal(err) }
+	nested := filepath.Join(absRoot, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		b.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("y"), 1<<20) // 1MB file
+	file := filepath.Join(nested, "c.txt")
+	if err := os.WriteFile(file, data, 0o644); err != nil {
+		b.Fatal(err)
+	}
 
-    benchServe(b, func(s *Slim) {
-        s.Use(Static(absRoot))
-    }, http.MethodGet, "/a/b/c.txt", http.StatusOK)
+	benchServe(b, func(s *Slim) {
+		s.Use(Static(absRoot))
+	}, http.MethodGet, "/a/b/c.txt", http.StatusOK)
 }
 
 // Static file serving (large) via Router.File
 func BenchmarkResponse_File_Large(b *testing.B) {
-    // Prepare temp file ~1MB
-    payload := bytes.Repeat([]byte("z"), 1<<20)
-    f, err := os.CreateTemp("", "slim-bench-*.bin")
-    if err != nil {
-        b.Fatal(err)
-    }
-    defer os.Remove(f.Name())
-    if _, err := f.Write(payload); err != nil { b.Fatal(err) }
-    if err := f.Close(); err != nil { b.Fatal(err) }
+	// Prepare temp file ~1MB
+	payload := bytes.Repeat([]byte("z"), 1<<20)
+	f, err := os.CreateTemp("", "slim-bench-*.bin")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(payload); err != nil {
+		b.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		b.Fatal(err)
+	}
 
-    benchServe(b, func(s *Slim) {
-        s.File("/file", f.Name())
-    }, http.MethodGet, "/file", http.StatusOK)
+	benchServe(b, func(s *Slim) {
+		s.File("/file", f.Name())
+	}, http.MethodGet, "/file", http.StatusOK)
 }
 
 // Router build time with large route sets
 func BenchmarkRouter_BuildTime_50k(b *testing.B) {
-    b.ReportAllocs()
-    for i := 0; i < b.N; i++ {
-        s := New()
-        s.StdLogger = nil
-        s.Logger = l4g.New(io.Discard)
-        b.StartTimer()
-        for j := 0; j < 50000; j++ {
-            p := "/bt/" + strconv.Itoa(j)
-            s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
-        }
-        b.StopTimer()
-    }
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		s := New()
+		s.StdLogger = nil
+		b.StartTimer()
+		for j := 0; j < 50000; j++ {
+			p := "/bt/" + strconv.Itoa(j)
+			s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
+		}
+		b.StopTimer()
+	}
 }
 
 func BenchmarkRouter_BuildTime_100k(b *testing.B) {
-    b.ReportAllocs()
-    for i := 0; i < b.N; i++ {
-        s := New()
-        s.StdLogger = nil
-        s.Logger = l4g.New(io.Discard)
-        b.StartTimer()
-        for j := 0; j < 100000; j++ {
-            p := "/bt2/" + strconv.Itoa(j)
-            s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
-        }
-        b.StopTimer()
-    }
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		s := New()
+		s.StdLogger = nil
+		b.StartTimer()
+		for j := 0; j < 100000; j++ {
+			p := "/bt2/" + strconv.Itoa(j)
+			s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
+		}
+		b.StopTimer()
+	}
 }
 
 // OPTIONS behavior on same path with/without explicit handler
 func BenchmarkRouter_OPTIONS_WithHandler(b *testing.B) {
-    benchServe(b, func(s *Slim) {
-        s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions}, "/opt", func(c Context) error {
-            if c.Request().Method == http.MethodOptions {
-                return c.NoContent(http.StatusNoContent)
-            }
-            return c.NoContent(http.StatusOK)
-        })
-    }, http.MethodOptions, "/opt", http.StatusNoContent)
+	benchServe(b, func(s *Slim) {
+		s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions}, "/opt", func(c Context) error {
+			if c.Request().Method == http.MethodOptions {
+				return c.NoContent(http.StatusNoContent)
+			}
+			return c.NoContent(http.StatusOK)
+		})
+	}, http.MethodOptions, "/opt", http.StatusNoContent)
 }
 
 func BenchmarkRouter_OPTIONS_WithoutHandler(b *testing.B) {
-    // Register multiple methods but not OPTIONS to trigger 405
-    benchServe(b, func(s *Slim) {
-        s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}, "/opt2", func(c Context) error {
-            return c.NoContent(http.StatusOK)
-        })
-    }, http.MethodOptions, "/opt2", http.StatusMethodNotAllowed)
+	// Register multiple methods but not OPTIONS to trigger 405
+	benchServe(b, func(s *Slim) {
+		s.Some([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}, "/opt2", func(c Context) error {
+			return c.NoContent(http.StatusOK)
+		})
+	}, http.MethodOptions, "/opt2", http.StatusMethodNotAllowed)
 }
 
 // VHost with middleware chains on router and collector
 func BenchmarkVHost_Middleware_Chain(b *testing.B) {
-    benchServe(b, func(s *Slim) {
-        // router-level middlewares for vhost
-        rmw := makeNMiddlewares(5)
-        r := s.Host("m.api.example.com", rmw...)
-        // collector-level middlewares
-        r.Route("/api", func(rc RouteCollector) {
-            cmw := makeNMiddlewares(5)
-            if len(cmw) > 0 {
-                rc.Use(cmw...)
-            }
-            rc.GET("/ping", func(c Context) error { return c.NoContent(http.StatusOK) })
-        })
-    }, http.MethodGet, "http://m.api.example.com/api/ping", http.StatusOK)
+	benchServe(b, func(s *Slim) {
+		// router-level middlewares for vhost
+		rmw := makeNMiddlewares(5)
+		r := s.Host("m.api.example.com", rmw...)
+		// collector-level middlewares
+		r.Route("/api", func(rc RouteCollector) {
+			cmw := makeNMiddlewares(5)
+			if len(cmw) > 0 {
+				rc.Use(cmw...)
+			}
+			rc.GET("/ping", func(c Context) error { return c.NoContent(http.StatusOK) })
+		})
+	}, http.MethodGet, "http://m.api.example.com/api/ping", http.StatusOK)
 }
 func BenchmarkRouter_MultiMethodsSamePath(b *testing.B) {
 	benchServe(b, func(s *Slim) {
@@ -268,7 +280,6 @@ func BenchmarkRouter_LongQueryString(b *testing.B) {
 func BenchmarkRouter_LargeHeaders(b *testing.B) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 	s.GET("/h", func(c Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/h", nil)
@@ -314,7 +325,6 @@ func BenchmarkJSON_Serialize_Large(b *testing.B) {
 func BenchmarkBind_JSON_Small(b *testing.B) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 	type reqBody struct {
 		Name string `json:"name"`
 	}
@@ -493,7 +503,6 @@ func BenchmarkRouter_LargeRouteSet_10k(b *testing.B) {
 func BenchmarkRouter_Parallel_Simple(b *testing.B) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 	s.GET("/p", func(c Context) error { return c.NoContent(http.StatusOK) })
 
 	b.ReportAllocs()
@@ -513,7 +522,6 @@ func BenchmarkRouter_Parallel_Simple(b *testing.B) {
 func BenchmarkRouter_Parallel_Param(b *testing.B) {
 	s := New()
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 	s.GET("/u/:id", func(c Context) error { _ = c.PathParam("id"); return c.NoContent(http.StatusOK) })
 
 	b.ReportAllocs()

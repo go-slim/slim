@@ -1,6 +1,8 @@
 package middleware
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestMatchScheme(t *testing.T) {
 	if !matchScheme("http://example.com", "http://*.example.com") {
@@ -25,8 +27,8 @@ func TestMatchSubdomain(t *testing.T) {
 	if matchSubdomain("https://a.b.com", "http://*.b.com") {
 		t.Fatalf("different scheme must not match")
 	}
-    // wildcard at leftmost should match any subdomain depth
-    if !matchSubdomain("http://a.b.c", "http://*.c") {
-        t.Fatalf("expected wildcard to match nested subdomains")
-    }
+	// wildcard at leftmost should match any subdomain depth
+	if !matchSubdomain("http://a.b.c", "http://*.c") {
+		t.Fatalf("expected wildcard to match nested subdomains")
+	}
 }

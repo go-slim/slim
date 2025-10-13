@@ -7,13 +7,10 @@ import (
 	"testing"
 
 	"go-slim.dev/slim"
-	"go-slim.dev/l4g"
 )
 
 func TestMiddlewareRecovery_PanicWrites500AndPrintsStack(t *testing.T) {
 	s := slim.New()
-	var logBuf bytes.Buffer
-	s.Logger = l4g.New(&logBuf)
 
 	// ensure error maps to 500 and logger ends
 	s.ErrorHandler = func(c slim.Context, err error) {

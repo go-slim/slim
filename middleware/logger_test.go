@@ -9,15 +9,21 @@ import (
 	"testing"
 
 	"go-slim.dev/slim"
-	"go-slim.dev/l4g"
 )
 
 // Test Logger middleware logs both successful and error responses.
 func TestLogger_LogBeginEnd_WithAndWithoutError(t *testing.T) {
 	s := slim.New()
-	// capture logs by replacing the logger instance (avoid atomic.Value type mismatch)
+	// capture logs by using a custom logger config that writes to our buffer
 	var out bytes.Buffer
-	s.Logger = l4g.New(&out)
+
+	// Create a custom logger config that uses our buffer
+	loggerConfig := LoggerConfig{
+		TimeLayout: "2006/01/02 15:04:05.000",
+		NewEntry: func(c slim.Context) LogEntry {
+			return NewLogEntry(&out) // 直接使用我们的缓冲区
+		},
+	}
 
 	// Error handler must finalize logging on error
 	s.ErrorHandler = func(c slim.Context, err error) {
@@ -34,7 +40,7 @@ func TestLogger_LogBeginEnd_WithAndWithoutError(t *testing.T) {
 		LogEnd(c, err)
 	}
 
-	s.Use(Logger())
+	s.Use(LoggerWithConfig(loggerConfig))
 
 	s.GET("/ok", func(c slim.Context) error {
 		return c.String(http.StatusOK, "ok")

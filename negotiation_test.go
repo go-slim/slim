@@ -1,4 +1,4 @@
-package nego
+package slim
 
 import (
 	"net/http"
@@ -50,7 +50,7 @@ func TestAcceptSlice_SortAndNegotiate(t *testing.T) {
 }
 
 func TestNegotiator_AcceptsAndType(t *testing.T) {
-	n := New(10, nil)
+	n := NewNegotiator(10, nil)
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
 	req.Header.Set(HeaderAccept, "application/json, text/*;q=0.5")
 	if got := n.Accepts(req.Header.Get(HeaderAccept), MIMETextPlain, MIMEApplicationJSON); got != MIMEApplicationJSON {

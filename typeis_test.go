@@ -1,4 +1,4 @@
-package nego
+package slim
 
 import "testing"
 

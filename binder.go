@@ -60,7 +60,7 @@ func BindBody(c Context, i any) (err error) {
 	}
 	switch c.Is("json", "xml", "form") {
 	case "json":
-		if err = c.Slim().JSONSerializer.Deserialize(c.Request().Body, i); err != nil {
+		if err = c.Slim().JSONCodec.Decode(c.Request().Body, i); err != nil {
 			if he, ok := err.(*HTTPError); ok {
 				return he
 			} else if ute, ok := err.(*json.UnmarshalTypeError); ok {
@@ -72,7 +72,7 @@ func BindBody(c Context, i any) (err error) {
 			}
 		}
 	case "xml":
-		if err = c.Slim().XMLSerializer.Deserialize(c.Request().Body, i); err != nil {
+		if err = c.Slim().XMLCodec.Decode(c.Request().Body, i); err != nil {
 			if he, ok := err.(*HTTPError); ok {
 				return he
 			} else if ute, ok := err.(*xml.UnsupportedTypeError); ok {
