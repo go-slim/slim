@@ -74,7 +74,8 @@ func (l *leaf) match(method string) ([]string, *endpoint) {
 	var ep *endpoint
 	ms := make([]string, len(l.endpoints))
 	for i, e := range l.endpoints {
-		if e.method == method {
+		// 支持通配符方法 "*" 匹配任何 HTTP 方法
+		if e.method == method || e.method == "*" {
 			ep = e
 		}
 		ms[i] = e.method

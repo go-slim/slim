@@ -129,3 +129,75 @@ func TestDefaultHandlers_404_500(t *testing.T) {
 		t.Fatalf("expected 500, got %d", rw.Code)
 	}
 }
+
+// TestRouter_Any_WildcardMethod tests that s.Any() correctly matches all HTTP methods
+// This test verifies the fix for wildcard method matching in tree.go:78
+func TestRouter_Any_WildcardMethod(t *testing.T) {
+	s := newSlimTest()
+
+	// Register a route using Any() which uses "*" as the method
+	s.Any("/api/test", func(c Context) error {
+		return c.String(http.StatusOK, "method="+c.Request().Method)
+	})
+
+	// Test all standard HTTP methods
+	methods := []string{
+		http.MethodGet,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodDelete,
+		http.MethodPatch,
+		http.MethodHead,
+		http.MethodOptions,
+	}
+
+	for _, method := range methods {
+		t.Run(method, func(t *testing.T) {
+			rw := perform(t, s, method, "/api/test", nil, nil)
+			if rw.Code != http.StatusOK {
+				t.Errorf("method %s: expected 200, got %d", method, rw.Code)
+			}
+			// HEAD requests don't return body
+			if method != http.MethodHead {
+				expected := "method=" + method
+				if body := rw.Body.String(); body != expected {
+					t.Errorf("method %s: expected body %q, got %q", method, expected, body)
+				}
+			}
+		})
+	}
+}
+
+// TestRouter_Any_WithWildcard tests that s.Any() works with wildcard path routes
+func TestRouter_Any_WithWildcard(t *testing.T) {
+	s := newSlimTest()
+
+	// Register wildcard route with Any()
+	s.Any("/files/*", func(c Context) error {
+		path := c.PathParam("*")
+		return c.String(http.StatusOK, "path="+path)
+	})
+
+	testCases := []struct {
+		method string
+		path   string
+		want   string
+	}{
+		{http.MethodGet, "/files/doc.txt", "path=doc.txt"},
+		{http.MethodPost, "/files/data.json", "path=data.json"},
+		{http.MethodPut, "/files/a/b/c", "path=a/b/c"},
+		{http.MethodDelete, "/files/old.log", "path=old.log"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.method+"_"+tc.path, func(t *testing.T) {
+			rw := perform(t, s, tc.method, tc.path, nil, nil)
+			if rw.Code != http.StatusOK {
+				t.Errorf("expected 200, got %d", rw.Code)
+			}
+			if body := rw.Body.String(); body != tc.want {
+				t.Errorf("expected body %q, got %q", tc.want, body)
+			}
+		})
+	}
+}
