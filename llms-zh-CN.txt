@@ -1,0 +1,757 @@
+# Slim Web 框架
+
+> **包名**: go-slim.dev/slim
+> **描述**: 一款快速、可组合的 Go HTTP 框架，提供极简内核和可插拔中间件
+> **版本**: 0.1.0
+> **Go 版本**: 1.24.0+
+
+Slim 是一个轻量级、高性能的 Go HTTP 框架，提供简洁的 API、强大的路由功能以及务实的默认设置。它强调简洁性、可组合性和开发者生产力。
+
+## 架构概览
+
+Slim 采用模块化架构，包含以下核心组件：
+
+1. **框架核心** (`slim.go`) - 主服务器实例及中间件系统
+2. **路由器** (`router.go`) - 基于前缀树的高性能路由，支持参数
+3. **上下文** (`context.go`) - 请求/响应生命周期管理
+4. **中间件** (`middleware/`) - 可插拔的中间件组件
+5. **绑定器** (`binder.go`) - 自动从请求中绑定数据
+6. **协商器** (`negotiation.go`) - HTTP 内容协商
+
+## 核心特性
+
+- **极简内核**: 轻量级基础，支持可插拔中间件架构
+- **高性能路由**: 基于前缀树（radix tree）的路由器，支持路径参数和通配符
+- **统一错误处理**: 集中式错误处理，支持路由级别和路由器级别的覆盖
+- **内容协商**: 自动进行类型、编码、字符集和语言协商
+- **多种渲染器**: 内置 JSON/XML/JSONP 渲染，支持自定义序列化器
+- **静态文件服务**: 基于 fs.FS 的灵活文件系统抽象
+- **内置中间件**: Logger、Recovery、CORS、Rate Limiter
+- **虚拟主机支持**: 单个服务器实例支持多域名路由
+
+## 核心类型
+
+### Slim 实例
+
+管理路由、中间件和请求处理的主服务器实例。
+
+```go
+type Slim struct {
+    router         Router              // 默认路由器
+    routers        map[string]Router   // 虚拟主机路由器
+    middleware     []MiddlewareFunc    // 全局中间件
+    contextPool    sync.Pool           // 上下文池（性能优化）
+    ErrorHandler   ErrorHandlerFunc    // 集中式错误处理器
+    Binder         Binder              // 请求数据绑定器
+    Validator      Validator           // 验证器接口
+    Renderer       Renderer            // 模板渲染器
+    JSONCodec      Codec               // JSON 编解码器
+    XMLCodec       Codec               // XML 编解码器
+    Filesystem     fs.FS               // 静态文件系统
+    // ... 其他配置字段
+}
+```
+
+**主要方法:**
+- `New() *Slim` - 创建带有默认配置的新实例
+- `Start(address string) error` - 启动 HTTP 服务器
+- `Use(middleware ...MiddlewareFunc)` - 注册全局中间件
+- `GET/POST/PUT/DELETE/PATCH/...` - HTTP 方法路由
+- `Group(fn func(RouteCollector))` - 路由分组
+- `Route(prefix string, fn func(RouteCollector))` - 带前缀的路由分组
+- `Host(name string, middleware ...MiddlewareFunc) Router` - 虚拟主机路由
+
+### HandlerFunc 和 MiddlewareFunc
+
+处理请求的核心函数类型:
+
+```go
+// HandlerFunc 定义处理 HTTP 请求的函数
+type HandlerFunc func(c Context) error
+
+// MiddlewareFunc 定义中间件处理函数
+type MiddlewareFunc func(c Context, next HandlerFunc) error
+```
+
+中间件包装处理器以添加横切关注点功能。多个中间件组合成处理链。
+
+### Context
+
+实现 `context.Context` 的请求/响应上下文:
+
+```go
+type Context interface {
+    context.Context
+
+    // 请求/响应
+    Request() *http.Request
+    Response() ResponseWriter
+
+    // 路由
+    PathParam(name string) string
+    PathParams() PathParams
+    QueryParam(name string) string
+    RouteInfo() RouteInfo
+
+    // 内容协商
+    Accepts(expect ...string) string
+    AcceptsEncodings(encodings ...string) string
+    AcceptsCharsets(charsets ...string) string
+    AcceptsLanguages(languages ...string) string
+
+    // 数据绑定
+    Bind(i any) error
+    Validate(i any) error
+
+    // 响应渲染
+    JSON(code int, i any) error
+    XML(code int, i any) error
+    HTML(code int, html string) error
+    String(code int, s string) error
+    File(file string, filesystem ...fs.FS) error
+    Redirect(code int, url string) error
+    // ... 更多渲染方法
+}
+```
+
+### Router
+
+基于前缀树实现的高性能路由:
+
+```go
+type Router interface {
+    MiddlewareRegistrar    // 中间件注册器
+    MiddlewareComposer     // 中间件组合器
+    ErrorHandlerRegistrar  // 错误处理器注册器
+    RouteRegistrar         // 路由注册器
+    RouteMatcher           // 路由匹配器
+
+    Add(methods []string, pattern string, h HandlerFunc) (Route, error)
+    Remove(methods []string, path string) error
+    Routes() []Route
+    URI(h HandlerFunc, params ...any) string         // 从处理器生成 URI
+    Reverse(name string, params ...any) string       // 从路由名称生成 URI
+}
+```
+
+**路由模式:**
+- 静态: `/users`
+- 参数: `/users/:id` (匹配 `/users/123`)
+- 通配符: `/static/*` (匹配 `/static/css/style.css`)
+
+**路由匹配优先级:**
+1. 静态段
+2. 参数段 (`:name`)
+3. 通配符段 (`*`)
+
+### Route 和 RouteCollector
+
+用于分组路由的路由管理:
+
+```go
+type Route interface {
+    Router() Router
+    Collector() RouteCollector
+    Name() string
+    SetName(name string) Route
+    Pattern() string
+    Methods() []string
+    Handler() HandlerFunc
+    Use(middleware ...MiddlewareFunc)  // 路由级别中间件
+}
+
+type RouteCollector interface {
+    MiddlewareRegistrar    // 为该分组注册中间件
+    ErrorHandlerRegistrar  // 为该分组注册错误处理器
+    RouteRegistrar         // 注册路由
+    Prefix() string
+    Parent() RouteCollector
+    Router() Router
+}
+```
+
+路由收集器支持分层路由组织，共享中间件和错误处理器。
+
+## 数据绑定
+
+绑定器自动将请求数据映射到 Go 结构体:
+
+```go
+type User struct {
+    ID       int    `path:"id"`          // 来自路径参数
+    Name     string `query:"name"`       // 来自查询字符串
+    Email    string `json:"email"`       // 来自 JSON 请求体
+    Age      int    `form:"age"`         // 来自表单数据
+    APIKey   string `header:"X-API-Key"` // 来自请求头
+}
+
+func CreateUser(c slim.Context) error {
+    var user User
+    if err := c.Bind(&user); err != nil {
+        return err
+    }
+    // user 已从请求中填充数据
+}
+```
+
+**绑定源（按顺序）:**
+1. 路径参数
+2. 查询参数（仅 GET/DELETE）
+3. 请求体（JSON/XML/表单）
+
+**自定义绑定:**
+实现 `BindUnmarshaler` 接口:
+```go
+type BindUnmarshaler interface {
+    UnmarshalParam(param string) error
+}
+```
+
+## 内容协商
+
+基于 `Accept` 头的自动内容类型协商:
+
+```go
+type Negotiator struct {
+    capacity int                    // 缓存容量
+    onParse  func(*Accept)         // 解析钩子
+    caches   map[string]*cache     // 已解析的头缓存
+}
+```
+
+**方法:**
+- `Type(r *http.Request, types ...string) string` - 协商媒体类型
+- `Charset(r *http.Request, charsets ...string) string` - 协商字符集
+- `Encoding(r *http.Request, encodings ...string) string` - 协商编码
+- `Language(r *http.Request, languages ...string) string` - 协商语言
+
+**Context 方法:**
+```go
+// 返回协商的值或空字符串
+c.Accepts("json", "xml")           // 返回 "json" 或 "xml"
+c.AcceptsEncodings("gzip", "br")   // 返回 "gzip" 或 "br"
+c.AcceptsCharsets("utf-8", "gbk")  // 返回 "utf-8" 或 "gbk"
+c.AcceptsLanguages("en", "zh")     // 返回 "en" 或 "zh"
+```
+
+## 中间件系统
+
+中间件包装处理器以提供横切功能:
+
+### 中间件组合
+
+```go
+// Compose 将多个中间件组合成单个中间件
+func Compose(middleware ...MiddlewareFunc) MiddlewareFunc
+
+// Tap 将中间件应用到处理器
+func Tap(h HandlerFunc, mw ...MiddlewareFunc) HandlerFunc
+```
+
+### 内置中间件
+
+#### Logger (`middleware/logger.go`)
+
+记录 HTTP 请求的时间、状态和错误信息:
+
+```go
+func Logger() slim.MiddlewareFunc
+func LoggerWithConfig(config LoggerConfig) slim.MiddlewareFunc
+
+type LoggerConfig struct {
+    TimeLayout string
+    NewEntry   func(slim.Context) LogEntry
+}
+```
+
+**使用方法:**
+```go
+s := slim.New()
+s.Use(middleware.Logger())
+```
+
+**手动日志记录:**
+```go
+// 在错误处理器中
+func ErrorHandler(c slim.Context, err error) {
+    middleware.LogEnd(c, err)  // 记录错误日志
+}
+```
+
+#### Recovery (`middleware/recovery.go`)
+
+从 panic 中恢复并记录堆栈跟踪:
+
+```go
+func Recovery() slim.MiddlewareFunc
+func RecoveryWithConfig(config RecoveryConfig) slim.MiddlewareFunc
+```
+
+#### CORS (`middleware/cors.go`)
+
+处理跨域资源共享:
+
+```go
+func CORS() slim.MiddlewareFunc
+func CORSWithConfig(config CORSConfig) slim.MiddlewareFunc
+
+type CORSConfig struct {
+    AllowOrigins     []string
+    AllowMethods     []string
+    AllowHeaders     []string
+    ExposeHeaders    []string
+    MaxAge           int
+    AllowCredentials bool
+}
+```
+
+#### Rate Limiter (`middleware/rate_limiter.go`)
+
+基于令牌桶的限流:
+
+```go
+func RateLimiter(config RateLimiterConfig) slim.MiddlewareFunc
+
+type RateLimiterConfig struct {
+    Rate         int             // 每个时间段的请求数
+    Duration     time.Duration   // 时间窗口
+    BurstSize    int             // 最大突发大小
+    KeyExtractor func(Context) string  // 从上下文提取键
+}
+```
+
+### 自定义中间件
+
+通过包装下一个处理器来创建中间件:
+
+```go
+func CustomMiddleware() slim.MiddlewareFunc {
+    return func(c slim.Context, next slim.HandlerFunc) error {
+        // 处理器前的逻辑
+
+        err := next(c)  // 调用下一个处理器
+
+        // 处理器后的逻辑
+        return err
+    }
+}
+```
+
+## 错误处理
+
+具有层次结构的统一错误处理:
+
+1. **路由收集器错误处理器** - 处理路由组的错误
+2. **路由器错误处理器** - 处理路由器的错误
+3. **Slim 错误处理器** - 全局错误处理器（默认）
+
+```go
+type ErrorHandler interface {
+    HandleError(c Context, err error)
+}
+
+type ErrorHandlerFunc func(c Context, err error)
+
+// 默认错误处理器
+func DefaultErrorHandler(c Context, err error)
+```
+
+**HTTPError 类型:**
+```go
+type HTTPError struct {
+    Code     int         // HTTP 状态码
+    Message  any         // 错误消息
+    Internal error       // 内部错误（不暴露给客户端）
+}
+
+func NewHTTPError(code int, message ...any) *HTTPError
+```
+
+**设置错误处理器:**
+```go
+// 全局级别
+s := slim.New()
+s.ErrorHandler = CustomErrorHandler
+
+// 路由器级别
+router := s.NewRouter()
+router.UseErrorHandler(RouterErrorHandler)
+
+// 路由收集器级别
+s.Route("/api", func(api slim.RouteCollector) {
+    api.UseErrorHandler(APIErrorHandler)
+    api.GET("/users", GetUsers)
+})
+```
+
+## 静态文件服务
+
+基于 `fs.FS` 的灵活文件系统抽象:
+
+```go
+// 服务目录
+s.Static("/static", "assets")
+
+// 服务单个文件
+s.File("/favicon.ico", "public/favicon.ico")
+
+// 自定义文件系统
+s.Filesystem = embed.FS
+
+// 在处理器中
+func ServeFile(c slim.Context) error {
+    return c.File("path/to/file.txt")
+}
+```
+
+**静态处理器:**
+```go
+func StaticDirectoryHandler(root string, disablePathUnescaping bool) HandlerFunc
+```
+
+## 虚拟主机路由
+
+在一个服务器中支持多个域名:
+
+```go
+s := slim.New()
+
+// 主域名的默认路由器
+s.GET("/", MainHandler)
+
+// api.example.com 的虚拟主机
+api := s.Host("api.example.com", APIMiddleware())
+api.GET("/users", GetUsers)
+
+// *.example.com 的通配符虚拟主机
+blog := s.Host("*.example.com", BlogMiddleware())
+blog.GET("/posts/:id", GetPost)
+```
+
+**主机解析优先级:**
+1. 精确域名匹配: `api.example.com`
+2. 通配符匹配: `*.example.com`
+3. 默认路由器
+
+## 组合模式
+
+### 中间件组合
+
+```go
+s := slim.New()
+
+// 全局中间件（对所有路由生效）
+s.Use(middleware.Logger())
+s.Use(middleware.Recovery())
+
+// 路由组中间件
+s.Route("/api", func(api slim.RouteCollector) {
+    api.Use(AuthMiddleware())
+
+    // 路由级别中间件
+    route := api.GET("/admin", AdminHandler)
+    route.Use(AdminOnlyMiddleware())
+})
+```
+
+**执行顺序:**
+```
+请求 → 全局中间件 → 路由器中间件 → 收集器中间件 → 路由中间件 → 处理器
+```
+
+### 错误处理器组合
+
+错误处理器遵循相同的层次结构:
+
+```
+路由收集器错误处理器 → 路由器错误处理器 → 全局错误处理器
+```
+
+## 常见模式
+
+### RESTful API
+
+```go
+s := slim.New()
+
+s.Route("/api/v1", func(api slim.RouteCollector) {
+    api.Use(middleware.Logger())
+    api.Use(AuthMiddleware())
+
+    api.Route("/users", func(users slim.RouteCollector) {
+        users.GET("", ListUsers)
+        users.POST("", CreateUser)
+        users.GET("/:id", GetUser)
+        users.PUT("/:id", UpdateUser)
+        users.DELETE("/:id", DeleteUser)
+    })
+})
+```
+
+### 内容协商
+
+```go
+func GetUser(c slim.Context) error {
+    user := fetchUser()
+
+    switch c.Accepts("json", "xml", "html") {
+    case "json":
+        return c.JSON(200, user)
+    case "xml":
+        return c.XML(200, user)
+    case "html":
+        return c.Render(200, "user.html", user)
+    default:
+        return slim.ErrNotAcceptable
+    }
+}
+```
+
+### 请求验证
+
+```go
+type CreateUserRequest struct {
+    Name  string `json:"name" validate:"required,min=3"`
+    Email string `json:"email" validate:"required,email"`
+}
+
+func CreateUser(c slim.Context) error {
+    var req CreateUserRequest
+    if err := c.Bind(&req); err != nil {
+        return err
+    }
+    if err := c.Validate(&req); err != nil {
+        return err
+    }
+    // 处理有效的请求
+}
+```
+
+### 文件上传
+
+```go
+func Upload(c slim.Context) error {
+    file, err := c.FormFile("upload")
+    if err != nil {
+        return err
+    }
+    src, err := file.Open()
+    if err != nil {
+        return err
+    }
+    defer src.Close()
+
+    // 保存文件
+    dst, err := os.Create(file.Filename)
+    if err != nil {
+        return err
+    }
+    defer dst.Close()
+
+    if _, err = io.Copy(dst, src); err != nil {
+        return err
+    }
+    return c.JSON(200, slim.Map{"message": "uploaded"})
+}
+```
+
+## 性能考虑
+
+1. **上下文池**: Slim 使用 `sync.Pool` 回收上下文对象，减少 GC 压力
+2. **协商缓存**: Accept 头解析结果通过 LRU 淘汰策略缓存
+3. **零分配**: 大多数常见模式的路由匹配零分配
+4. **前缀树路由**: O(k) 查找时间，其中 k 是 URL 路径长度
+5. **中间件组合**: 中间件在路由注册时组合一次，而非每次请求
+
+## 标准库兼容性
+
+Slim 提供 `net/http` 兼容性适配器:
+
+```go
+// 将 http.Handler 包装为 slim.HandlerFunc
+handler := slim.WrapHandler(httpHandler)
+
+// 将 http.HandlerFunc 包装为 slim.HandlerFunc
+handler := slim.WrapHandlerFunc(httpHandlerFunc)
+
+// 将 http 中间件包装为 slim.MiddlewareFunc
+mw := slim.WrapMiddleware(func(h http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // 中间件逻辑
+        h.ServeHTTP(w, r)
+    })
+})
+```
+
+## 测试
+
+可以创建 Slim 上下文用于测试:
+
+```go
+func TestHandler(t *testing.T) {
+    s := slim.New()
+
+    req := httptest.NewRequest("GET", "/test", nil)
+    rec := httptest.NewRecorder()
+
+    c := s.NewContext(rec, req)
+
+    if err := MyHandler(c); err != nil {
+        t.Fatal(err)
+    }
+
+    assert.Equal(t, 200, rec.Code)
+}
+```
+
+## 依赖
+
+- `github.com/fatih/color` - 终端彩色输出
+- `golang.org/x/crypto` - TLS/ACME 支持
+- `golang.org/x/net` - HTTP/2 支持
+- `golang.org/x/sync` - 协商缓存的 singleflight
+- `golang.org/x/time` - 限流
+
+## 常见错误
+
+### ErrNotFound
+当路由器找不到匹配的路由时返回。映射到 404 状态。
+
+### ErrMethodNotAllowed
+当路径匹配但 HTTP 方法不匹配时返回。映射到 405 状态。会设置 `Allow` 头列出支持的方法。
+
+### ErrUnsupportedMediaType
+当请求 Content-Type 无法处理时返回。映射到 415 状态。
+
+### ErrBinderNotRegistered / ErrValidatorNotRegistered / ErrRendererNotRegistered
+在未配置相应组件的情况下尝试使用 Bind()/Validate()/Render() 时返回。
+
+## 配置
+
+### 自定义 Slim 实例
+
+```go
+s := slim.New()
+
+// 自定义绑定器
+s.Binder = &CustomBinder{}
+
+// 自定义验证器
+s.Validator = &CustomValidator{}
+
+// 自定义渲染器
+s.Renderer = &TemplateRenderer{}
+
+// 自定义 JSON 编解码器
+s.JSONCodec = CustomJSONCodec{}
+
+// 自定义文件系统
+s.Filesystem = os.DirFS("/var/www")
+
+// 自定义错误处理器
+s.ErrorHandler = CustomErrorHandler
+
+// 自定义上下文构造器
+s.NewContextFunc = func(pathParamAllocSize int) slim.EditableContext {
+    return &MyCustomContext{}
+}
+```
+
+### 服务器配置
+
+```go
+s := slim.New()
+
+// HTTP/2 支持
+s.DisableHTTP2 = false
+
+// 调试模式（格式化输出 JSON）
+s.Debug = true
+
+// 文件上传大小限制
+s.MultipartMemoryLimit = 32 << 20  // 32 MB
+
+// JSON/XML 格式化缩进
+s.PrettyIndent = "  "
+
+// 自定义监听器
+s.ListenerNetwork = "tcp"  // 或 "tcp4", "tcp6"
+
+// TLS 配置
+s.StartTLS(":443", "cert.pem", "key.pem")
+
+// 使用 Let's Encrypt 自动 TLS
+s.AutoTLSManager.Cache = autocert.DirCache("certs")
+s.AutoTLSManager.HostPolicy = autocert.HostWhitelist("example.com")
+s.StartAutoTLS(":443")
+
+// HTTP/2 明文（h2c）
+h2s := &http2.Server{}
+s.StartH2CServer(":8080", h2s)
+```
+
+## 迁移指南
+
+### 从标准 net/http
+
+```go
+// 之前（net/http）
+http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+    json.NewEncoder(w).Encode(data)
+})
+
+// 之后（slim）
+s.GET("/", func(c slim.Context) error {
+    return c.JSON(200, data)
+})
+```
+
+### 使用现有处理器
+
+```go
+// 现有的 http.Handler
+var existingHandler http.Handler
+
+// 在 slim 中包装
+s.GET("/legacy", slim.WrapHandler(existingHandler))
+
+// 现有的 http.HandlerFunc
+s.GET("/legacy2", slim.WrapHandlerFunc(existingHandlerFunc))
+```
+
+## 最佳实践
+
+1. **错误处理**: 始终从处理器返回错误；不要直接调用 `c.Error()`
+2. **中间件顺序**: Logger 第一，Recovery 第二，然后是认证/验证中间件
+3. **路由组织**: 对相关端点使用路由组
+4. **内容协商**: 使用 `c.Accepts()` 进行 API 版本控制和格式支持
+5. **上下文存储**: 使用 `c.Set()`/`c.Get()` 存储请求范围的数据
+6. **资源清理**: 在处理器中使用 defer 进行清理
+7. **错误上下文**: 使用 `NewHTTPErrorWithInternal()` 保留内部错误并控制客户端消息
+
+## 示例
+
+`examples/` 目录包含可运行的示例:
+
+- `quick-start/` - 基本的 hello world 服务器
+- `static/` - 静态文件服务
+- `cors/` - CORS 中间件使用
+- `logger-recovery/` - Logger 和 recovery 中间件
+- `nego/` - 内容协商示例
+- `rate-limiter/` - 限流示例
+
+## 相关文件
+
+- `slim.go` - 核心框架实现
+- `router.go` - 路由系统
+- `context.go` - 请求上下文
+- `binder.go` - 数据绑定
+- `negotiation.go` - 内容协商
+- `middleware/` - 内置中间件
+- `error.go` - 错误类型
+- `response.go` - 响应写入器
+- `static.go` - 静态文件处理
+
+---
+
+完整的 API 文档和示例，请访问: https://go-slim.dev

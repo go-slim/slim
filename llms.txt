@@ -1,0 +1,757 @@
+# Slim Web Framework
+
+> **Package**: go-slim.dev/slim
+> **Description**: A fast, composable Go HTTP framework with minimal core and pluggable middleware
+> **Version**: 0.1.0
+> **Go Version**: 1.24.0+
+
+Slim is a lightweight, high-performance HTTP framework for Go that provides clean APIs, powerful routing, and pragmatic defaults. It emphasizes simplicity, composability, and developer productivity.
+
+## Architecture Overview
+
+Slim follows a modular architecture with these core components:
+
+1. **Framework Core** (`slim.go`) - Main server instance with middleware system
+2. **Router** (`router.go`) - High-performance prefix tree routing with parameter support
+3. **Context** (`context.go`) - Request/response lifecycle management
+4. **Middleware** (`middleware/`) - Pluggable middleware components
+5. **Binder** (`binder.go`) - Automatic data binding from requests
+6. **Negotiator** (`negotiation.go`) - HTTP content negotiation
+
+## Key Features
+
+- **Minimal Core**: Lightweight foundation with pluggable middleware architecture
+- **High-Performance Routing**: Prefix tree (radix tree) based router with path parameters and wildcards
+- **Unified Error Handling**: Centralized error handling with route-level and router-level overrides
+- **Content Negotiation**: Automatic type, encoding, charset, and language negotiation
+- **Multiple Renderers**: Built-in JSON/XML/JSONP rendering with custom serializers
+- **Static File Serving**: Based on fs.FS for flexible file system abstraction
+- **Built-in Middleware**: Logger, Recovery, CORS, Rate Limiter
+- **Virtual Host Support**: Multiple domain routing in a single server instance
+
+## Core Types
+
+### Slim Instance
+
+The main server instance managing routing, middleware, and request handling.
+
+```go
+type Slim struct {
+    router         Router              // Default router
+    routers        map[string]Router   // Virtual host routers
+    middleware     []MiddlewareFunc    // Global middleware
+    contextPool    sync.Pool           // Context pool for performance
+    ErrorHandler   ErrorHandlerFunc    // Centralized error handler
+    Binder         Binder              // Request data binder
+    Validator      Validator           // Validator interface
+    Renderer       Renderer            // Template renderer
+    JSONCodec      Codec               // JSON encoder/decoder
+    XMLCodec       Codec               // XML encoder/decoder
+    Filesystem     fs.FS               // Static file system
+    // ... other configuration fields
+}
+```
+
+**Key Methods:**
+- `New() *Slim` - Create new instance with defaults
+- `Start(address string) error` - Start HTTP server
+- `Use(middleware ...MiddlewareFunc)` - Register global middleware
+- `GET/POST/PUT/DELETE/PATCH/...` - HTTP method routing
+- `Group(fn func(RouteCollector))` - Route grouping
+- `Route(prefix string, fn func(RouteCollector))` - Prefixed route group
+- `Host(name string, middleware ...MiddlewareFunc) Router` - Virtual host routing
+
+### HandlerFunc and MiddlewareFunc
+
+Core function types for request handling:
+
+```go
+// HandlerFunc defines a function to serve HTTP requests
+type HandlerFunc func(c Context) error
+
+// MiddlewareFunc defines middleware processing
+type MiddlewareFunc func(c Context, next HandlerFunc) error
+```
+
+Middleware wraps handlers to add cross-cutting functionality. Multiple middleware compose into a chain.
+
+### Context
+
+Request/response context implementing `context.Context`:
+
+```go
+type Context interface {
+    context.Context
+
+    // Request/Response
+    Request() *http.Request
+    Response() ResponseWriter
+
+    // Routing
+    PathParam(name string) string
+    PathParams() PathParams
+    QueryParam(name string) string
+    RouteInfo() RouteInfo
+
+    // Content Negotiation
+    Accepts(expect ...string) string
+    AcceptsEncodings(encodings ...string) string
+    AcceptsCharsets(charsets ...string) string
+    AcceptsLanguages(languages ...string) string
+
+    // Data Binding
+    Bind(i any) error
+    Validate(i any) error
+
+    // Response Rendering
+    JSON(code int, i any) error
+    XML(code int, i any) error
+    HTML(code int, html string) error
+    String(code int, s string) error
+    File(file string, filesystem ...fs.FS) error
+    Redirect(code int, url string) error
+    // ... more rendering methods
+}
+```
+
+### Router
+
+High-performance routing with prefix tree implementation:
+
+```go
+type Router interface {
+    MiddlewareRegistrar
+    MiddlewareComposer
+    ErrorHandlerRegistrar
+    RouteRegistrar
+    RouteMatcher
+
+    Add(methods []string, pattern string, h HandlerFunc) (Route, error)
+    Remove(methods []string, path string) error
+    Routes() []Route
+    URI(h HandlerFunc, params ...any) string         // Generate URI from handler
+    Reverse(name string, params ...any) string       // Generate URI from route name
+}
+```
+
+**Route Patterns:**
+- Static: `/users`
+- Parameters: `/users/:id` (matches `/users/123`)
+- Wildcards: `/static/*` (matches `/static/css/style.css`)
+
+**Route Matching Priority:**
+1. Static segments
+2. Parameter segments (`:name`)
+3. Wildcard segments (`*`)
+
+### Route and RouteCollector
+
+Route management for grouped routing:
+
+```go
+type Route interface {
+    Router() Router
+    Collector() RouteCollector
+    Name() string
+    SetName(name string) Route
+    Pattern() string
+    Methods() []string
+    Handler() HandlerFunc
+    Use(middleware ...MiddlewareFunc)  // Route-level middleware
+}
+
+type RouteCollector interface {
+    MiddlewareRegistrar    // Register middleware for this group
+    ErrorHandlerRegistrar  // Register error handler for this group
+    RouteRegistrar         // Register routes
+    Prefix() string
+    Parent() RouteCollector
+    Router() Router
+}
+```
+
+Route collectors enable hierarchical route organization with shared middleware and error handlers.
+
+## Data Binding
+
+The binder automatically maps request data to Go structs:
+
+```go
+type User struct {
+    ID       int    `path:"id"`          // From path parameters
+    Name     string `query:"name"`       // From query string
+    Email    string `json:"email"`       // From JSON body
+    Age      int    `form:"age"`         // From form data
+    APIKey   string `header:"X-API-Key"` // From headers
+}
+
+func CreateUser(c slim.Context) error {
+    var user User
+    if err := c.Bind(&user); err != nil {
+        return err
+    }
+    // user is populated from request
+}
+```
+
+**Binding Sources (in order):**
+1. Path parameters
+2. Query parameters (GET/DELETE only)
+3. Request body (JSON/XML/Form)
+
+**Custom Binding:**
+Implement `BindUnmarshaler` interface:
+```go
+type BindUnmarshaler interface {
+    UnmarshalParam(param string) error
+}
+```
+
+## Content Negotiation
+
+Automatic content type negotiation based on `Accept` headers:
+
+```go
+type Negotiator struct {
+    capacity int                    // Cache capacity
+    onParse  func(*Accept)         // Parse hook
+    caches   map[string]*cache     // Parsed header cache
+}
+```
+
+**Methods:**
+- `Type(r *http.Request, types ...string) string` - Negotiate media type
+- `Charset(r *http.Request, charsets ...string) string` - Negotiate charset
+- `Encoding(r *http.Request, encodings ...string) string` - Negotiate encoding
+- `Language(r *http.Request, languages ...string) string` - Negotiate language
+
+**Context Methods:**
+```go
+// Returns negotiated value or empty string
+c.Accepts("json", "xml")           // Returns "json" or "xml"
+c.AcceptsEncodings("gzip", "br")   // Returns "gzip" or "br"
+c.AcceptsCharsets("utf-8", "gbk")  // Returns "utf-8" or "gbk"
+c.AcceptsLanguages("en", "zh")     // Returns "en" or "zh"
+```
+
+## Middleware System
+
+Middleware wraps handlers to provide cross-cutting functionality:
+
+### Middleware Composition
+
+```go
+// Compose creates a single middleware from multiple middleware
+func Compose(middleware ...MiddlewareFunc) MiddlewareFunc
+
+// Tap applies middleware to a handler
+func Tap(h HandlerFunc, mw ...MiddlewareFunc) HandlerFunc
+```
+
+### Built-in Middleware
+
+#### Logger (`middleware/logger.go`)
+
+Logs HTTP requests with timing, status, and error information:
+
+```go
+func Logger() slim.MiddlewareFunc
+func LoggerWithConfig(config LoggerConfig) slim.MiddlewareFunc
+
+type LoggerConfig struct {
+    TimeLayout string
+    NewEntry   func(slim.Context) LogEntry
+}
+```
+
+**Usage:**
+```go
+s := slim.New()
+s.Use(middleware.Logger())
+```
+
+**Manual Logging:**
+```go
+// In error handler
+func ErrorHandler(c slim.Context, err error) {
+    middleware.LogEnd(c, err)  // Log with error
+}
+```
+
+#### Recovery (`middleware/recovery.go`)
+
+Recovers from panics and logs stack traces:
+
+```go
+func Recovery() slim.MiddlewareFunc
+func RecoveryWithConfig(config RecoveryConfig) slim.MiddlewareFunc
+```
+
+#### CORS (`middleware/cors.go`)
+
+Handles Cross-Origin Resource Sharing:
+
+```go
+func CORS() slim.MiddlewareFunc
+func CORSWithConfig(config CORSConfig) slim.MiddlewareFunc
+
+type CORSConfig struct {
+    AllowOrigins     []string
+    AllowMethods     []string
+    AllowHeaders     []string
+    ExposeHeaders    []string
+    MaxAge           int
+    AllowCredentials bool
+}
+```
+
+#### Rate Limiter (`middleware/rate_limiter.go`)
+
+Token bucket based rate limiting:
+
+```go
+func RateLimiter(config RateLimiterConfig) slim.MiddlewareFunc
+
+type RateLimiterConfig struct {
+    Rate         int             // Requests per duration
+    Duration     time.Duration   // Time window
+    BurstSize    int             // Max burst size
+    KeyExtractor func(Context) string  // Extract key from context
+}
+```
+
+### Custom Middleware
+
+Create middleware by wrapping the next handler:
+
+```go
+func CustomMiddleware() slim.MiddlewareFunc {
+    return func(c slim.Context, next slim.HandlerFunc) error {
+        // Before handler
+
+        err := next(c)  // Call next handler
+
+        // After handler
+        return err
+    }
+}
+```
+
+## Error Handling
+
+Unified error handling with hierarchy:
+
+1. **Route Collector Error Handler** - Handles errors for route group
+2. **Router Error Handler** - Handles errors for router
+3. **Slim Error Handler** - Global error handler (default)
+
+```go
+type ErrorHandler interface {
+    HandleError(c Context, err error)
+}
+
+type ErrorHandlerFunc func(c Context, err error)
+
+// Default error handler
+func DefaultErrorHandler(c Context, err error)
+```
+
+**HTTPError Type:**
+```go
+type HTTPError struct {
+    Code     int         // HTTP status code
+    Message  any         // Error message
+    Internal error       // Internal error (not exposed to client)
+}
+
+func NewHTTPError(code int, message ...any) *HTTPError
+```
+
+**Setting Error Handlers:**
+```go
+// Global level
+s := slim.New()
+s.ErrorHandler = CustomErrorHandler
+
+// Router level
+router := s.NewRouter()
+router.UseErrorHandler(RouterErrorHandler)
+
+// Route collector level
+s.Route("/api", func(api slim.RouteCollector) {
+    api.UseErrorHandler(APIErrorHandler)
+    api.GET("/users", GetUsers)
+})
+```
+
+## Static File Serving
+
+Based on `fs.FS` for flexible file system abstraction:
+
+```go
+// Serve directory
+s.Static("/static", "assets")
+
+// Serve single file
+s.File("/favicon.ico", "public/favicon.ico")
+
+// Custom file system
+s.Filesystem = embed.FS
+
+// In handler
+func ServeFile(c slim.Context) error {
+    return c.File("path/to/file.txt")
+}
+```
+
+**Static Handler:**
+```go
+func StaticDirectoryHandler(root string, disablePathUnescaping bool) HandlerFunc
+```
+
+## Virtual Host Routing
+
+Support multiple domains in one server:
+
+```go
+s := slim.New()
+
+// Default router for main domain
+s.GET("/", MainHandler)
+
+// Virtual host for api.example.com
+api := s.Host("api.example.com", APIMiddleware())
+api.GET("/users", GetUsers)
+
+// Wildcard virtual host for *.example.com
+blog := s.Host("*.example.com", BlogMiddleware())
+blog.GET("/posts/:id", GetPost)
+```
+
+**Host Resolution Priority:**
+1. Exact domain match: `api.example.com`
+2. Wildcard match: `*.example.com`
+3. Default router
+
+## Composition Patterns
+
+### Middleware Composition
+
+```go
+s := slim.New()
+
+// Global middleware (runs for all routes)
+s.Use(middleware.Logger())
+s.Use(middleware.Recovery())
+
+// Route group middleware
+s.Route("/api", func(api slim.RouteCollector) {
+    api.Use(AuthMiddleware())
+
+    // Route-level middleware
+    route := api.GET("/admin", AdminHandler)
+    route.Use(AdminOnlyMiddleware())
+})
+```
+
+**Execution Order:**
+```
+Request → Global MW → Router MW → Collector MW → Route MW → Handler
+```
+
+### Error Handler Composition
+
+Error handlers follow the same hierarchy:
+
+```
+Route Collector Error Handler → Router Error Handler → Global Error Handler
+```
+
+## Common Patterns
+
+### RESTful API
+
+```go
+s := slim.New()
+
+s.Route("/api/v1", func(api slim.RouteCollector) {
+    api.Use(middleware.Logger())
+    api.Use(AuthMiddleware())
+
+    api.Route("/users", func(users slim.RouteCollector) {
+        users.GET("", ListUsers)
+        users.POST("", CreateUser)
+        users.GET("/:id", GetUser)
+        users.PUT("/:id", UpdateUser)
+        users.DELETE("/:id", DeleteUser)
+    })
+})
+```
+
+### Content Negotiation
+
+```go
+func GetUser(c slim.Context) error {
+    user := fetchUser()
+
+    switch c.Accepts("json", "xml", "html") {
+    case "json":
+        return c.JSON(200, user)
+    case "xml":
+        return c.XML(200, user)
+    case "html":
+        return c.Render(200, "user.html", user)
+    default:
+        return slim.ErrNotAcceptable
+    }
+}
+```
+
+### Request Validation
+
+```go
+type CreateUserRequest struct {
+    Name  string `json:"name" validate:"required,min=3"`
+    Email string `json:"email" validate:"required,email"`
+}
+
+func CreateUser(c slim.Context) error {
+    var req CreateUserRequest
+    if err := c.Bind(&req); err != nil {
+        return err
+    }
+    if err := c.Validate(&req); err != nil {
+        return err
+    }
+    // Process valid request
+}
+```
+
+### File Upload
+
+```go
+func Upload(c slim.Context) error {
+    file, err := c.FormFile("upload")
+    if err != nil {
+        return err
+    }
+    src, err := file.Open()
+    if err != nil {
+        return err
+    }
+    defer src.Close()
+
+    // Save file
+    dst, err := os.Create(file.Filename)
+    if err != nil {
+        return err
+    }
+    defer dst.Close()
+
+    if _, err = io.Copy(dst, src); err != nil {
+        return err
+    }
+    return c.JSON(200, slim.Map{"message": "uploaded"})
+}
+```
+
+## Performance Considerations
+
+1. **Context Pooling**: Slim uses `sync.Pool` to recycle context objects, reducing GC pressure
+2. **Negotiation Caching**: Accept header parsing results are cached with LRU eviction
+3. **Zero Allocation**: Route matching has zero allocations for most common patterns
+4. **Prefix Tree Routing**: O(k) lookup time where k is the URL path length
+5. **Middleware Composition**: Middleware is composed once at route registration, not per request
+
+## Standard Library Compatibility
+
+Slim provides adapters for `net/http` compatibility:
+
+```go
+// Wrap http.Handler to slim.HandlerFunc
+handler := slim.WrapHandler(httpHandler)
+
+// Wrap http.HandlerFunc to slim.HandlerFunc
+handler := slim.WrapHandlerFunc(httpHandlerFunc)
+
+// Wrap http middleware to slim.MiddlewareFunc
+mw := slim.WrapMiddleware(func(h http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // middleware logic
+        h.ServeHTTP(w, r)
+    })
+})
+```
+
+## Testing
+
+Slim contexts can be created for testing:
+
+```go
+func TestHandler(t *testing.T) {
+    s := slim.New()
+
+    req := httptest.NewRequest("GET", "/test", nil)
+    rec := httptest.NewRecorder()
+
+    c := s.NewContext(rec, req)
+
+    if err := MyHandler(c); err != nil {
+        t.Fatal(err)
+    }
+
+    assert.Equal(t, 200, rec.Code)
+}
+```
+
+## Dependencies
+
+- `github.com/fatih/color` - Terminal color output
+- `golang.org/x/crypto` - TLS/ACME support
+- `golang.org/x/net` - HTTP/2 support
+- `golang.org/x/sync` - singleflight for negotiation caching
+- `golang.org/x/time` - Rate limiting
+
+## Common Errors
+
+### ErrNotFound
+Returned when router cannot find a matching route. Mapped to 404 status.
+
+### ErrMethodNotAllowed
+Returned when path matches but HTTP method doesn't. Mapped to 405 status. The `Allow` header is set with supported methods.
+
+### ErrUnsupportedMediaType
+Returned when request Content-Type cannot be handled. Mapped to 415 status.
+
+### ErrBinderNotRegistered / ErrValidatorNotRegistered / ErrRendererNotRegistered
+Returned when attempting to use Bind()/Validate()/Render() without configuring the respective component.
+
+## Configuration
+
+### Customizing Slim Instance
+
+```go
+s := slim.New()
+
+// Custom binder
+s.Binder = &CustomBinder{}
+
+// Custom validator
+s.Validator = &CustomValidator{}
+
+// Custom renderer
+s.Renderer = &TemplateRenderer{}
+
+// Custom JSON codec
+s.JSONCodec = CustomJSONCodec{}
+
+// Custom file system
+s.Filesystem = os.DirFS("/var/www")
+
+// Custom error handler
+s.ErrorHandler = CustomErrorHandler
+
+// Custom context constructor
+s.NewContextFunc = func(pathParamAllocSize int) slim.EditableContext {
+    return &MyCustomContext{}
+}
+```
+
+### Server Configuration
+
+```go
+s := slim.New()
+
+// HTTP/2 support
+s.DisableHTTP2 = false
+
+// Debug mode (pretty print JSON)
+s.Debug = true
+
+// File upload size limit
+s.MultipartMemoryLimit = 32 << 20  // 32 MB
+
+// JSON/XML pretty indent
+s.PrettyIndent = "  "
+
+// Custom listener
+s.ListenerNetwork = "tcp"  // or "tcp4", "tcp6"
+
+// TLS configuration
+s.StartTLS(":443", "cert.pem", "key.pem")
+
+// Auto TLS with Let's Encrypt
+s.AutoTLSManager.Cache = autocert.DirCache("certs")
+s.AutoTLSManager.HostPolicy = autocert.HostWhitelist("example.com")
+s.StartAutoTLS(":443")
+
+// HTTP/2 Cleartext (h2c)
+h2s := &http2.Server{}
+s.StartH2CServer(":8080", h2s)
+```
+
+## Migration Guide
+
+### From Standard net/http
+
+```go
+// Before (net/http)
+http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+    json.NewEncoder(w).Encode(data)
+})
+
+// After (slim)
+s.GET("/", func(c slim.Context) error {
+    return c.JSON(200, data)
+})
+```
+
+### Using Existing Handlers
+
+```go
+// Existing http.Handler
+var existingHandler http.Handler
+
+// Wrap in slim
+s.GET("/legacy", slim.WrapHandler(existingHandler))
+
+// Existing http.HandlerFunc
+s.GET("/legacy2", slim.WrapHandlerFunc(existingHandlerFunc))
+```
+
+## Best Practices
+
+1. **Error Handling**: Always return errors from handlers; don't call `c.Error()` directly
+2. **Middleware Order**: Place Logger first, Recovery second, then auth/validation middleware
+3. **Route Organization**: Use route groups for related endpoints
+4. **Content Negotiation**: Use `c.Accepts()` for API versioning and format support
+5. **Context Storage**: Use `c.Set()`/`c.Get()` for request-scoped data
+6. **Resource Cleanup**: Use defer for cleanup in handlers
+7. **Error Context**: Use `NewHTTPErrorWithInternal()` to preserve internal errors while controlling client messages
+
+## Examples
+
+The `examples/` directory contains working examples:
+
+- `quick-start/` - Basic hello world server
+- `static/` - Static file serving
+- `cors/` - CORS middleware usage
+- `logger-recovery/` - Logger and recovery middleware
+- `nego/` - Content negotiation examples
+- `rate-limiter/` - Rate limiting examples
+
+## Related Files
+
+- `slim.go` - Core framework implementation
+- `router.go` - Routing system
+- `context.go` - Request context
+- `binder.go` - Data binding
+- `negotiation.go` - Content negotiation
+- `middleware/` - Built-in middleware
+- `error.go` - Error types
+- `response.go` - Response writer
+- `static.go` - Static file handling
+
+---
+
+For complete API documentation and examples, visit: https://go-slim.dev
