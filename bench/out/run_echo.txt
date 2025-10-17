@@ -2,27 +2,27 @@ goos: darwin
 goarch: arm64
 pkg: go-slim.dev/slim-bench
 cpu: Apple M4 Pro
-BenchmarkBasic_Echo            	  487611	       456.9 ns/op	    1016 B/op	      10 allocs/op
-BenchmarkBasic_Echo            	  511798	       466.1 ns/op	    1016 B/op	      10 allocs/op
-BenchmarkBasic_Echo            	  532622	       458.9 ns/op	    1016 B/op	      10 allocs/op
-BenchmarkJSON_Echo             	  453903	       553.4 ns/op	    1072 B/op	      11 allocs/op
-BenchmarkJSON_Echo             	  462308	       530.1 ns/op	    1072 B/op	      11 allocs/op
-BenchmarkJSON_Echo             	  437208	       578.1 ns/op	    1072 B/op	      11 allocs/op
-BenchmarkHEAD_Explicit_Echo    	 1877655	       128.0 ns/op	     208 B/op	       4 allocs/op
-BenchmarkHEAD_Explicit_Echo    	 1851691	       131.0 ns/op	     208 B/op	       4 allocs/op
-BenchmarkHEAD_Explicit_Echo    	 1838487	       130.3 ns/op	     208 B/op	       4 allocs/op
-BenchmarkOPTIONS_Explicit_Echo 	 1781235	       162.5 ns/op	     208 B/op	       4 allocs/op
-BenchmarkOPTIONS_Explicit_Echo 	 1884060	       134.2 ns/op	     208 B/op	       4 allocs/op
-BenchmarkOPTIONS_Explicit_Echo 	 1764092	       130.6 ns/op	     208 B/op	       4 allocs/op
-BenchmarkMiddleware5_Echo      	  429248	       532.6 ns/op	    1096 B/op	      15 allocs/op
-BenchmarkMiddleware5_Echo      	  454347	       538.5 ns/op	    1096 B/op	      15 allocs/op
-BenchmarkMiddleware5_Echo      	  468745	       527.6 ns/op	    1096 B/op	      15 allocs/op
-BenchmarkMiddleware10_Echo     	  390924	       652.9 ns/op	    1176 B/op	      20 allocs/op
-BenchmarkMiddleware10_Echo     	  310453	       650.2 ns/op	    1176 B/op	      20 allocs/op
-BenchmarkMiddleware10_Echo     	  388306	       614.1 ns/op	    1176 B/op	      20 allocs/op
-BenchmarkParams_Echo           	  473960	       492.1 ns/op	    1016 B/op	      10 allocs/op
-BenchmarkParams_Echo           	  437041	       491.1 ns/op	    1016 B/op	      10 allocs/op
-BenchmarkParams_Echo           	  499466	       482.2 ns/op	    1016 B/op	      10 allocs/op
+BenchmarkBasic_Echo            	  506238	       459.4 ns/op	    1016 B/op	      10 allocs/op
+BenchmarkBasic_Echo            	  546530	       455.5 ns/op	    1016 B/op	      10 allocs/op
+BenchmarkBasic_Echo            	  490663	       478.5 ns/op	    1016 B/op	      10 allocs/op
+BenchmarkJSON_Echo             	  450577	       543.7 ns/op	    1072 B/op	      11 allocs/op
+BenchmarkJSON_Echo             	  457800	       540.0 ns/op	    1072 B/op	      11 allocs/op
+BenchmarkJSON_Echo             	  454168	       554.7 ns/op	    1072 B/op	      11 allocs/op
+BenchmarkHEAD_Explicit_Echo    	 1857235	       128.2 ns/op	     208 B/op	       4 allocs/op
+BenchmarkHEAD_Explicit_Echo    	 1897262	       128.2 ns/op	     208 B/op	       4 allocs/op
+BenchmarkHEAD_Explicit_Echo    	 1890150	       129.4 ns/op	     208 B/op	       4 allocs/op
+BenchmarkOPTIONS_Explicit_Echo 	 1884594	       126.6 ns/op	     208 B/op	       4 allocs/op
+BenchmarkOPTIONS_Explicit_Echo 	 1895854	       127.5 ns/op	     208 B/op	       4 allocs/op
+BenchmarkOPTIONS_Explicit_Echo 	 1849857	       130.7 ns/op	     208 B/op	       4 allocs/op
+BenchmarkMiddleware5_Echo      	  470196	       531.5 ns/op	    1096 B/op	      15 allocs/op
+BenchmarkMiddleware5_Echo      	  488139	       532.4 ns/op	    1096 B/op	      15 allocs/op
+BenchmarkMiddleware5_Echo      	  479140	       534.0 ns/op	    1096 B/op	      15 allocs/op
+BenchmarkMiddleware10_Echo     	  407865	       601.0 ns/op	    1176 B/op	      20 allocs/op
+BenchmarkMiddleware10_Echo     	  372360	       632.1 ns/op	    1176 B/op	      20 allocs/op
+BenchmarkMiddleware10_Echo     	  389929	       609.0 ns/op	    1176 B/op	      20 allocs/op
+BenchmarkParams_Echo           	  536557	       474.8 ns/op	    1016 B/op	      10 allocs/op
+BenchmarkParams_Echo           	  542806	       464.4 ns/op	    1016 B/op	      10 allocs/op
+BenchmarkParams_Echo           	  526281	       464.9 ns/op	    1016 B/op	      10 allocs/op
 PASS
-ok  	go-slim.dev/slim-bench	6.382s
+ok  	go-slim.dev/slim-bench	6.378s
 ?   	go-slim.dev/slim-bench/cmd/chart	[no test files]

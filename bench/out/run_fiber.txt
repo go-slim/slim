@@ -2,27 +2,27 @@ goos: darwin
 goarch: arm64
 pkg: go-slim.dev/slim-bench
 cpu: Apple M4 Pro
-BenchmarkBasic_Fiber            	   80085	      2935 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkBasic_Fiber            	   85603	      2789 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkBasic_Fiber            	   86788	      2709 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkJSON_Fiber             	   85192	      2793 ns/op	    5556 B/op	      24 allocs/op
-BenchmarkJSON_Fiber             	   83649	      2931 ns/op	    5556 B/op	      24 allocs/op
-BenchmarkJSON_Fiber             	   80916	      3223 ns/op	    5556 B/op	      24 allocs/op
-BenchmarkHEAD_Explicit_Fiber    	   77857	      3521 ns/op	    5442 B/op	      19 allocs/op
-BenchmarkHEAD_Explicit_Fiber    	   81417	      3913 ns/op	    5442 B/op	      19 allocs/op
-BenchmarkHEAD_Explicit_Fiber    	   79639	      2864 ns/op	    5442 B/op	      19 allocs/op
-BenchmarkOPTIONS_Explicit_Fiber 	   87399	      3187 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkOPTIONS_Explicit_Fiber 	   80763	      2795 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkOPTIONS_Explicit_Fiber 	   86919	      3101 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkMiddleware5_Fiber      	   84174	      3021 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkMiddleware5_Fiber      	   85456	      2812 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkMiddleware5_Fiber      	   85684	      2768 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkMiddleware10_Fiber     	   85562	      2875 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkMiddleware10_Fiber     	   84516	      2923 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkMiddleware10_Fiber     	   77306	      3038 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkParams_Fiber           	   80040	      2907 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkParams_Fiber           	   82759	      2990 ns/op	    5530 B/op	      21 allocs/op
-BenchmarkParams_Fiber           	   73786	      3054 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkBasic_Fiber            	   86917	      2652 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkBasic_Fiber            	   90992	      2654 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkBasic_Fiber            	   89295	      2640 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkJSON_Fiber             	   86661	      2844 ns/op	    5556 B/op	      24 allocs/op
+BenchmarkJSON_Fiber             	   86469	      2799 ns/op	    5556 B/op	      24 allocs/op
+BenchmarkJSON_Fiber             	   86082	      2795 ns/op	    5556 B/op	      24 allocs/op
+BenchmarkHEAD_Explicit_Fiber    	   92307	      2603 ns/op	    5442 B/op	      19 allocs/op
+BenchmarkHEAD_Explicit_Fiber    	   91555	      2653 ns/op	    5442 B/op	      19 allocs/op
+BenchmarkHEAD_Explicit_Fiber    	   92199	      2604 ns/op	    5442 B/op	      19 allocs/op
+BenchmarkOPTIONS_Explicit_Fiber 	   90168	      2677 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkOPTIONS_Explicit_Fiber 	   89410	      2708 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkOPTIONS_Explicit_Fiber 	   85190	      2723 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkMiddleware5_Fiber      	   88231	      2690 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkMiddleware5_Fiber      	   87159	      2678 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkMiddleware5_Fiber      	   89592	      2716 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkMiddleware10_Fiber     	   88158	      2732 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkMiddleware10_Fiber     	   88110	      2714 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkMiddleware10_Fiber     	   87804	      2712 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkParams_Fiber           	   88528	      2756 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkParams_Fiber           	   87841	      2714 ns/op	    5530 B/op	      21 allocs/op
+BenchmarkParams_Fiber           	   88814	      2717 ns/op	    5530 B/op	      21 allocs/op
 PASS
-ok  	go-slim.dev/slim-bench	6.537s
+ok  	go-slim.dev/slim-bench	6.831s
 ?   	go-slim.dev/slim-bench/cmd/chart	[no test files]

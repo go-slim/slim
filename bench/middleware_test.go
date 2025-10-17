@@ -1,16 +1,14 @@
 package bench
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/gofiber/fiber/v2"
 	"github.com/labstack/echo/v4"
-	"go-slim.dev/l4g"
 	"go-slim.dev/slim"
 )
 
@@ -24,7 +22,6 @@ func newSlimWithMW(n int) http.Handler {
 	s.HideBanner = true
 	s.Debug = false
 	s.StdLogger = nil
-	s.Logger = l4g.New(io.Discard)
 	// 构造 n 层无操作中间件
 	for i := 0; i < n; i++ {
 		s.Use(func(c slim.Context, next slim.HandlerFunc) error { return next(c) })
