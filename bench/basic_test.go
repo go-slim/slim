@@ -34,8 +34,7 @@ func BenchmarkBasic_Slim(b *testing.B) {
 	h := setupSlimBasic()
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -45,8 +44,7 @@ func BenchmarkJSON_Slim(b *testing.B) {
 	h := setupSlimBasic()
 	req := httptest.NewRequest(http.MethodGet, "/json", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -65,8 +63,7 @@ func BenchmarkBasic_Gin(b *testing.B) {
 	h := setupGinBasic()
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -76,8 +73,7 @@ func BenchmarkJSON_Gin(b *testing.B) {
 	h := setupGinBasic()
 	req := httptest.NewRequest(http.MethodGet, "/json", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -98,8 +94,7 @@ func BenchmarkBasic_Echo(b *testing.B) {
 	h := setupEchoBasic()
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -109,8 +104,7 @@ func BenchmarkJSON_Echo(b *testing.B) {
 	h := setupEchoBasic()
 	req := httptest.NewRequest(http.MethodGet, "/json", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -132,8 +126,7 @@ func BenchmarkBasic_Fiber(b *testing.B) {
 	app := setupFiberBasic()
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = app.Test(req, -1)
 	}
 }
@@ -142,8 +135,7 @@ func BenchmarkJSON_Fiber(b *testing.B) {
 	app := setupFiberBasic()
 	req := httptest.NewRequest(http.MethodGet, "/json", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = app.Test(req, -1)
 	}
 }
@@ -167,8 +159,7 @@ func BenchmarkBasic_Chi(b *testing.B) {
 	h := setupChiBasic()
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -178,8 +169,7 @@ func BenchmarkJSON_Chi(b *testing.B) {
 	h := setupChiBasic()
 	req := httptest.NewRequest(http.MethodGet, "/json", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}

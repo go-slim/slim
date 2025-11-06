@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gofiber/fiber/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/gofiber/fiber/v2"
 	"github.com/labstack/echo/v4"
 	"go-slim.dev/slim"
 )
@@ -42,8 +42,7 @@ func BenchmarkParams_Chi(b *testing.B) {
 	h := setupChiParams()
 	req := httptest.NewRequest(http.MethodGet, "/users/12345", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -53,8 +52,7 @@ func BenchmarkParams_Slim(b *testing.B) {
 	h := setupSlimParams()
 	req := httptest.NewRequest(http.MethodGet, "/users/12345", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -72,8 +70,7 @@ func BenchmarkParams_Gin(b *testing.B) {
 	h := setupGinParams()
 	req := httptest.NewRequest(http.MethodGet, "/users/12345", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -93,8 +90,7 @@ func BenchmarkParams_Echo(b *testing.B) {
 	h := setupEchoParams()
 	req := httptest.NewRequest(http.MethodGet, "/users/12345", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -111,8 +107,7 @@ func BenchmarkParams_Fiber(b *testing.B) {
 	app := setupFiberParams()
 	req := httptest.NewRequest(http.MethodGet, "/users/12345", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = app.Test(req, -1)
 	}
 }

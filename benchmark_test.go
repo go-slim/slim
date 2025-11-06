@@ -24,8 +24,7 @@ func benchServe(b *testing.B, setup func(s *Slim), method, path string, want int
 
 	req := httptest.NewRequest(method, path, nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rr := httptest.NewRecorder()
 		s.ServeHTTP(rr, req)
 		if rr.Code != want {
@@ -112,8 +111,7 @@ func BenchmarkVhost_Static_HEAD_Nested(b *testing.B) {
 	req.Host = "v1.local"
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rr := httptest.NewRecorder()
 		s.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
@@ -131,8 +129,7 @@ func BenchmarkRouter_OPTIONS_AllowHeader(b *testing.B) {
 
 	req := httptest.NewRequest(http.MethodOptions, "/opt3", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rr := httptest.NewRecorder()
 		s.ServeHTTP(rr, req)
 		if rr.Code != http.StatusMethodNotAllowed {
@@ -197,11 +194,11 @@ func BenchmarkResponse_File_Large(b *testing.B) {
 // Router build time with large route sets
 func BenchmarkRouter_BuildTime_50k(b *testing.B) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s := New()
 		s.StdLogger = nil
 		b.StartTimer()
-		for j := 0; j < 50000; j++ {
+		for j := range 50000 {
 			p := "/bt/" + strconv.Itoa(j)
 			s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
 		}
@@ -211,11 +208,11 @@ func BenchmarkRouter_BuildTime_50k(b *testing.B) {
 
 func BenchmarkRouter_BuildTime_100k(b *testing.B) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s := New()
 		s.StdLogger = nil
 		b.StartTimer()
-		for j := 0; j < 100000; j++ {
+		for j := range 100000 {
 			p := "/bt2/" + strconv.Itoa(j)
 			s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
 		}
@@ -284,13 +281,12 @@ func BenchmarkRouter_LargeHeaders(b *testing.B) {
 
 	req := httptest.NewRequest(http.MethodGet, "/h", nil)
 	// Add many/large headers once (request reused)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		req.Header.Set("X-K-"+strconv.Itoa(i), strings.Repeat("v", 64))
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rr := httptest.NewRecorder()
 		s.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
@@ -315,7 +311,7 @@ func BenchmarkJSON_Serialize_Large(b *testing.B) {
 			V string `json:"v"`
 		}
 		big := make([]item, 0, 1000)
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			big = append(big, item{V: strings.Repeat("x", 40)})
 		}
 		s.GET("/json-large", func(c Context) error { return c.JSON(http.StatusOK, big) })
@@ -337,8 +333,7 @@ func BenchmarkBind_JSON_Small(b *testing.B) {
 	})
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		body := bytes.NewReader([]byte(`{"name":"slim"}`))
 		req := httptest.NewRequest(http.MethodPost, "/bind", body)
 		req.Header.Set("Content-Type", "application/json")
@@ -401,7 +396,7 @@ func BenchmarkVHost_Router(b *testing.B) {
 // Many vhosts each with nested collectors/routes
 func BenchmarkVHost_ManyHostsCollectors(b *testing.B) {
 	benchServe(b, func(s *Slim) {
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			host := "h" + strconv.Itoa(i) + ".example.com"
 			r := s.Host(host)
 			r.Route("/api", func(rc RouteCollector) {
@@ -425,7 +420,7 @@ func BenchmarkResponse_Stream_Large(b *testing.B) {
 // makeNMiddlewares returns n middlewares chained in order.
 func makeNMiddlewares(n int) []MiddlewareFunc {
 	mws := make([]MiddlewareFunc, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		mws = append(mws, func(c Context, next HandlerFunc) error { return next(c) })
 	}
 	return mws
@@ -481,7 +476,7 @@ func BenchmarkRouter_MultiParams(b *testing.B) {
 
 // Large route sets
 func registerManyRoutes(s *Slim, n int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		p := "/r/" + strconv.Itoa(i)
 		s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
 	}

@@ -2,7 +2,6 @@ package slim
 
 import (
 	"bytes"
-	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -16,50 +15,51 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
-// Context 网络请求上下文，包含了请求数据（路径、路径参数、载荷）
-// 和响应对象以及已注册的处理程序等。
+// Context represents the network request context, containing request data (path, path parameters, payload)
+// and response objects as well as registered handlers.
 type Context interface {
-	// Context 实现 context.Context 接口
-	context.Context
-	// Request 返回当前请求的 `*http.Request` 结构体实例
+	// Request returns the current request's `*http.Request` struct instance.
 	Request() *http.Request
-	// SetRequest 为上下文设置新的 `*http.Request` 结构体实例。
+	// SetRequest sets a new `*http.Request` struct instance for the context.
 	SetRequest(r *http.Request)
-	// Response 返回当前请求的 `http.ResponseWriter` 接口实现
+	// Response returns the current request's `http.ResponseWriter` interface implementation.
 	Response() ResponseWriter
-	// SetResponse 为上下文设置新的 `http.ResponseWriter` 实现
+	// SetResponse sets a new `http.ResponseWriter` implementation for the context.
 	SetResponse(r ResponseWriter)
 	// Filesystem returns `fs.FS`.
 	Filesystem() fs.FS
 	// SetFilesystem sets `fs.FS`
 	SetFilesystem(fs.FS)
-	// IsTLS 判断 HTTP 连接是否采用了 Transport Layer Security (TLS) 协议，
-	// 如果是返回 true，否则返回 false。
+	// IsTLS checks if the HTTP connection uses Transport Layer Security (TLS) protocol.
+	// Returns true if TLS is enabled, false otherwise.
 	IsTLS() bool
-	// IsWebSocket 判断 HTTP 连接是否为 WebSocket 协议，如果
-	// 是就返回 true，否则返回 false。
+	// IsWebSocket checks if the HTTP connection is using WebSocket protocol.
+	// Returns true if it's a WebSocket connection, false otherwise.
 	IsWebSocket() bool
-	// Scheme 获取 HTTP 请求的协议方案，返回值为 `http` 或者 `https`
+	// Scheme gets the HTTP request protocol scheme, returning either "http" or "https".
 	Scheme() string
 	// RealIP returns the client's network address based on `X-Forwarded-For`
 	// or `X-Real-IP` request header.
 	// The behavior can be configured using `Slim#IPExtractor`.
 	RealIP() string
+	// RequestMethod returns the HTTP request method (GET, POST, PUT, etc.).
+	RequestMethod() string
+	// RequestURI returns the unmodified request-target URI as sent by the client.
 	RequestURI() string
+	// Is checks if the request accepts any of the given content types and returns the best match.
 	Is(types ...string) string
-	// Accepts 返回支持的权重最高的媒体类型，若匹配失败则会返回空字符串。
-	// 给出的值可以是标准的媒体类型（如 application/json），也可以是扩展名（如 json、xml 等）。
+	// Accepts returns the highest weight supported media type, or returns an empty string if matching fails.
+	// The provided values can be standard media types (like application/json) or extensions (like json, xml, etc.).
 	Accepts(expect ...string) string
-	// AcceptsEncodings 返回支持的权重最高的编码方式，若匹配失败则会返回空字符串。
+	// AcceptsEncodings returns the highest weight supported encoding method, or returns an empty string if matching fails.
 	AcceptsEncodings(encodings ...string) string
-	// AcceptsCharsets 返回支持的权重最高的字符集，若匹配失败则会返回空字符串。
+	// AcceptsCharsets returns the highest weight supported character set, or returns an empty string if matching fails.
 	AcceptsCharsets(charsets ...string) string
-	// AcceptsLanguages 返回支持的权重最高的语言，若匹配失败则会返回空字符串。
+	// AcceptsLanguages returns the highest weight supported language, or returns an empty string if matching fails.
 	AcceptsLanguages(languages ...string) string
-	// AllowsMethods 返回允许的请求方法
+	// AllowsMethods returns the allowed HTTP methods.
 	AllowsMethods() []string
 	// RouteMatchType returns router match type for current context. This helps middlewares to distinguish which type
 	// of match router found and how this request context handler chain could end:
@@ -92,7 +92,9 @@ type Context interface {
 	FormParams() (url.Values, error)
 	// FormFile returns the multipart form file for the provided name.
 	FormFile(name string) (*multipart.FileHeader, error)
+	// Header returns the header value for the given key.
 	Header(key string) string
+	// SetHeader sets the header values for the given key.
 	SetHeader(key string, values ...string)
 	// MultipartForm returns the multipart form.
 	MultipartForm() (*multipart.Form, error)
@@ -112,57 +114,57 @@ type Context interface {
 	// Validate validates provided `i`. It is usually called after `Context#Bind()`.
 	// Validator must be registered using `Slim#Validator`.
 	Validate(i any) error
-	// Written returns whether the context response has been written to
+	// Written returns whether the context response has been written to.
 	Written() bool
 	// Render renders a template with data and sends a text/html response with status
 	// code. Renderer must be registered using `Slim.Renderer`.
 	Render(code int, name string, data any) error
-	// HTML sends an HTTP response with status code.
+	// HTML sends an HTML response with the given status code.
 	HTML(code int, html string) error
-	// HTMLBlob sends an HTTP blob response with status code.
+	// HTMLBlob sends an HTML blob response with the given status code.
 	HTMLBlob(code int, b []byte) error
-	// String sends a string response with status code.
+	// String sends a string response with the given status code.
 	String(code int, s string) error
-	// JSON sends a JSON response with status code.
+	// JSON sends a JSON response with the given status code.
 	JSON(code int, i any) error
-	// JSONPretty sends a pretty-print JSON with status code.
+	// JSONPretty sends a pretty-print JSON response with the given status code.
 	JSONPretty(code int, i any, indent string) error
-	// JSONBlob sends a JSON blob response with status code.
+	// JSONBlob sends a JSON blob response with the given status code.
 	JSONBlob(code int, b []byte) error
-	// JSONP sends a JSONP response with status code. It uses `callback` to construct
+	// JSONP sends a JSONP response with the given status code. It uses `callback` to construct
 	// the JSONP payload.
 	JSONP(code int, callback string, i any) error
-	// JSONPBlob sends a JSONP blob response with status code. It uses `callback`
+	// JSONPBlob sends a JSONP blob response with the given status code. It uses `callback`
 	// to construct the JSONP payload.
 	JSONPBlob(code int, callback string, b []byte) error
-	// XML sends an XML response with status code.
+	// XML sends an XML response with the given status code.
 	XML(code int, i any) error
-	// XMLPretty sends a pretty-print XML with status code.
+	// XMLPretty sends a pretty-print XML response with the given status code.
 	XMLPretty(code int, i any, indent string) error
-	// XMLBlob sends an XML blob response with status code.
+	// XMLBlob sends an XML blob response with the given status code.
 	XMLBlob(code int, b []byte) error
-	// Blob sends a blob response with a status code and content type.
+	// Blob sends a blob response with the given status code and content type.
 	Blob(code int, contentType string, b []byte) error
-	// Stream sends a streaming response with status code and content type.
+	// Stream sends a streaming response with the given status code and content type.
 	Stream(code int, contentType string, r io.Reader) error
 	// File sends a response with the content of the file.
 	File(file string, filesystem ...fs.FS) error
-	// Attachment sends a response as attachment, prompting client to save the
-	// file.
+	// Attachment sends a response as attachment, prompting client to save the file.
 	Attachment(file string, name string) error
 	// Inline sends a response as inline, opening the file in the browser.
 	Inline(file string, name string) error
-	// NoContent sends a response with nobody and a status code.
+	// NoContent sends a response with no body and the given status code.
 	NoContent(code ...int) error
-	// Redirect redirects the request to a provided URL with status code.
+	// Redirect redirects the request to the provided URL with the given status code.
 	Redirect(code int, url string) error
 	// Error invokes the registered HTTP error handler.
 	// NB: Avoid using this method. It is better to return errors, so middlewares up in a chain could act on returned error.
 	Error(err error)
-	// Slim 返回 Slim 实例
+	// Slim returns the Slim instance.
 	Slim() *Slim
 }
 
+// EditableContext extends the Context interface with methods for modifying context state.
 type EditableContext interface {
 	Context
 	// RawPathParams returns raw path pathParams value.
@@ -171,6 +173,7 @@ type EditableContext interface {
 	SetRawPathParams(params *PathParams)
 	// SetRouteMatchType sets the RouteMatchType of router match for this request.
 	SetRouteMatchType(t RouteMatchType)
+	// SetAllowsMethods sets the allowed HTTP methods for this request.
 	SetAllowsMethods(methods []string)
 	// SetRouteInfo sets the route info of this request to the context.
 	SetRouteInfo(ri RouteInfo)
@@ -180,12 +183,15 @@ type EditableContext interface {
 	Reset(w http.ResponseWriter, r *http.Request)
 }
 
-var _ EditableContext = &contextImpl{}
+var _ EditableContext = (*contextImpl)(nil)
 
+// BytesGetter interface for types that can return byte slices.
 type BytesGetter interface {
+	// Bytes returns the byte slice representation of the object.
 	Bytes() []byte
 }
 
+// contextImpl is the default implementation of the EditableContext interface.
 type contextImpl struct {
 	request       *http.Request
 	response      ResponseWriter
@@ -193,11 +199,11 @@ type contextImpl struct {
 	allowsMethods []string
 	route         RouteInfo
 	filesystem    fs.FS
-	// pathParams holds path/uri parameters determined by Router.
-	// The Lifecycle is handled by Slim to reduce allocations.
+	// pathParams holds path/URI parameters determined by Router.
+	// The lifecycle is handled by Slim to reduce allocations.
 	pathParams *PathParams
-	// currentParams hold path parameters set by non-Slim implementation (custom middlewares, handlers) during the lifetime of Request.
-	// Lifecycle is not handle by Slim and could have excess allocations per served Request
+	// currentParams holds path parameters set by non-Slim implementation (custom middlewares, handlers) during the lifetime of Request.
+	// Lifecycle is not handled by Slim and could have excess allocations per served request.
 	currentParams PathParams
 	negotiator    *Negotiator
 	query         url.Values
@@ -206,50 +212,11 @@ type contextImpl struct {
 	mu            sync.RWMutex
 }
 
-func (x *contextImpl) Deadline() (deadline time.Time, ok bool) {
-	return x.request.Context().Deadline()
-}
-
-func (x *contextImpl) Done() <-chan struct{} {
-	return x.request.Context().Done()
-}
-
-func (x *contextImpl) Err() error {
-	return x.request.Context().Err()
-}
-
-func (x *contextImpl) Value(key any) any {
-	x.mu.RLock()
-	defer x.mu.RUnlock()
-
-	if k, ok := key.(*contextKey); ok {
-		switch k.name {
-		case SlimContextKey.name:
-			return x.slim
-		case RequestContextKey.name:
-			return x.request
-		case ResponseContextKey.name:
-			return x.response
-		case ContextKey.name:
-			return x
-		}
-	}
-
-	if ks, ok := key.(string); ok {
-		value, has := x.store[ks]
-		if has {
-			return value
-		}
-	}
-
-	return x.request.Context().Value(key)
-}
-
 // Reset resets the context after request completes. It must be called along
 // with `Slim.AcquireContext()` and `Slim.ReleaseContext()`.
-// See `Slim.ServeHTTP()`
+// See `Slim.ServeHTTP()`.
 func (x *contextImpl) Reset(w http.ResponseWriter, r *http.Request) {
-	x.request = x.wrap(r)
+	x.request = r
 	x.response = NewResponseWriter(r.Method, w) // todo x.response.reset
 	x.matchType = RouteMatchUnknown
 	x.allowsMethods = x.allowsMethods[:0]
@@ -269,14 +236,7 @@ func (x *contextImpl) Request() *http.Request {
 
 // SetRequest sets `*http.Request`.
 func (x *contextImpl) SetRequest(r *http.Request) {
-	x.request = x.wrap(r)
-}
-
-func (x *contextImpl) wrap(r *http.Request) *http.Request {
-	ctx := r.Context()
-	ctx = context.WithValue(ctx, SlimContextKey, x.slim)
-	ctx = context.WithValue(ctx, ContextKey, x)
-	return r.WithContext(ctx)
+	x.request = r
 }
 
 // Response returns `slim.ResponseWriter`.
@@ -356,6 +316,10 @@ func (x *contextImpl) RealIP() string {
 	}
 	ra, _, _ := net.SplitHostPort(x.request.RemoteAddr)
 	return ra
+}
+
+func (x *contextImpl) RequestMethod() string {
+	return x.request.Method
 }
 
 func (x *contextImpl) RequestURI() string {
@@ -789,16 +753,16 @@ func (x *contextImpl) Slim() *Slim {
 	return x.slim
 }
 
-// PathParams 路由参数列表
+// PathParams represents a list of route parameters.
 type PathParams []PathParam
 
-// PathParam 路径参数
+// PathParam represents a single route parameter.
 type PathParam struct {
-	Name  string // 参数名
-	Value string // 参数值
+	Name  string // Parameter name
+	Value string // Parameter value
 }
 
-// Get 获取与 name 对应的值，若不存在，则返回提供的默认值
+// Get retrieves the value corresponding to name, returns the provided default value if it doesn't exist.
 func (p PathParams) Get(name string, defaultValue ...string) string {
 	if value, ok := p.Lookup(name); ok && value != "" {
 		return value
@@ -809,8 +773,8 @@ func (p PathParams) Get(name string, defaultValue ...string) string {
 	return ""
 }
 
-// Lookup 检查并返回参数值，
-// 第一个返回值是与 name 对应的值，第二个返回值表示是否存在。
+// Lookup checks and returns the parameter value.
+// The first return value is the value corresponding to name, the second return value indicates whether it exists.
 func (p PathParams) Lookup(name string) (string, bool) {
 	for _, param := range p {
 		if param.Name == name {

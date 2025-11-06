@@ -19,21 +19,21 @@ import (
 
 // Router is interface for routing requests to registered routes.
 type Router interface {
-	// MiddlewareRegistrar 实现中间件注册接口
+	// MiddlewareRegistrar implements middleware registration interface
 	MiddlewareRegistrar
-	// MiddlewareComposer 实现中间件合成器接口
+	// MiddlewareComposer implements middleware composer interface
 	MiddlewareComposer
-	// ErrorHandlerRegistrar 实现错误处理器注册接口
+	// ErrorHandlerRegistrar implements error handler registration interface
 	ErrorHandlerRegistrar
-	// RouteRegistrar 实现路由注册器接口
+	// RouteRegistrar implements route registration interface
 	RouteRegistrar
-	// RouteMatcher 实现路由匹配器接口
+	// RouteMatcher implements route matcher interface
 	RouteMatcher
 	// Add registers a new route for method and path with matching handler.
 	Add([]string, string, HandlerFunc) (Route, error)
-	// Remove 移除路由
+	// Remove removes route
 	Remove(methods []string, path string) error
-	// Routes 返回注册的路由
+	// Routes returns registered routes
 	Routes() []Route
 	// URI generates a URI from handler.
 	URI(h HandlerFunc, params ...any) string
@@ -61,8 +61,8 @@ type RouteMatch struct {
 	// Type contains a result as enumeration of Router.Match and helps to understand did Router actually matched Route or
 	// what kind of error case (404/405) we have at the end of the handler chain.
 	Type RouteMatchType
-	// AllowMethods 能够接受处理的请求方法列表，主要
-	// 在 Type 值为 RouteMatchMethodNotAllowed 时被使用。
+	// AllowMethods list of acceptable request methods, mainly
+	// used when Type value is RouteMatchMethodNotAllowed.
 	AllowMethods []string
 	// Handler is function(chain) that was matched by router. In case of no match could result to ErrNotFound or ErrMethodNotAllowed.
 	Handler HandlerFunc
@@ -70,13 +70,13 @@ type RouteMatch struct {
 	RouteInfo RouteInfo
 }
 
-// RouteMatcher 路由匹配器接口
+// RouteMatcher route matcher interface
 type RouteMatcher interface {
-	// Match 匹配路由
+	// Match matches route
 	Match(r *http.Request, p *PathParams) RouteMatch
 }
 
-// RouteCollector 路由收集器接口
+// RouteCollector route collector interface
 type RouteCollector interface {
 	// MiddlewareRegistrar 实现中间件注册接口
 	MiddlewareRegistrar
@@ -86,25 +86,26 @@ type RouteCollector interface {
 	ErrorHandlerRegistrar
 	// RouteRegistrar 实现路由注册器接口
 	RouteRegistrar
-	// Prefix 返回路由共用前缀
+	// Prefix returns the common prefix of routes
 	Prefix() string
-	// Parent 返回上级路由收集器
+	// Parent returns the parent route collector
 	Parent() RouteCollector
-	// Router 返回所属路由器
+	// Router returns the belonging router
 	Router() Router
 }
 
-// RouteRegistrar 路由注册器接口
+// RouteRegistrar route registration interface
 //
-// 其中 RouteRegistrar.Some 和 RouteRegistrar.Any 以及
-// RouteRegistrar.Handle 为我们自定义非标准的 HTTP 请求方法
-// 提供了扩展的能力。
+// RouteRegistrar.Some, RouteRegistrar.Any, and
+// RouteRegistrar.Handle provide extension capabilities
+// for custom non-standard HTTP request methods.
 type RouteRegistrar interface {
-	// Group 对路由进行分组，方便我们把一个或多个中间件作用在
-	// 同组路由上，并使它们在错误和 panic 上使用相同的处理方式
+	// Group groups routes to conveniently apply one or more middleware
+	// to routes in the same group, and make them use the same handling
+	// for errors and panics
 	Group(fn func(sub RouteCollector))
-	// Route 为同组路由指定相同的前缀，使用方法和内部逻辑与
-	// 方法 Group 保持一致
+	// Route specifies the same prefix for routes in the same group,
+	// with usage and internal logic consistent with the Group method
 	Route(prefix string, fn func(sub RouteCollector))
 	// Some registers a new route for multiple HTTP methods and path with matching
 	// handler in the router. Panics on error.
@@ -139,7 +140,7 @@ type RouteRegistrar interface {
 	// TRACE registers a new TRACE route for a path with matching handler in
 	// the router. Panics on error.
 	TRACE(pattern string, h HandlerFunc) Route
-	// Handle 注册一个支持指定请求方法的路由
+	// Handle registers a route that supports specified request methods
 	Handle(method, pattern string, h HandlerFunc) Route
 	// Static registers a new route with path prefix to serve static files
 	// from the provided root directory. Panics on error.
@@ -149,57 +150,57 @@ type RouteRegistrar interface {
 	File(pattern, file string) Route
 }
 
-// Route 路由接口
+// Route route interface
 type Route interface {
-	// MiddlewareRegistrar 实现中间件注册接口
+	// MiddlewareRegistrar implements middleware registration interface
 	MiddlewareRegistrar
-	// MiddlewareComposer 实现中间件合成器接口
+	// MiddlewareComposer implements middleware composer interface
 	MiddlewareComposer
-	// Router 返回所属路由器
+	// Router returns the belonging router
 	Router() Router
-	// Collector 返回所属收集器
+	// Collector returns the belonging collector
 	Collector() RouteCollector
-	// Name 返回路由名称
+	// Name returns the route name
 	Name() string
-	// SetName 设置路由名称
+	// SetName sets the route name
 	SetName(name string) Route
-	// Title 返回路由标题
+	// Title returns the route title
 	Title() string
-	// SetTitle 设置路由标题
+	// SetTitle sets the route title
 	SetTitle(name string) Route
-	// Pattern 路由路径表达式
+	// Pattern route path expression
 	Pattern() string
-	// Methods 返回支持的 HTTP 请求方法
+	// Methods returns the supported HTTP request methods
 	Methods() []string
-	// Handler 返回注册的请求处理器函数
+	// Handler returns the registered request handler function
 	Handler() HandlerFunc
-	// Params 返回支持的路由参数列表
+	// Params returns the supported route parameter list
 	Params() []string
-	// RouteInfo 返回路由描述接口实现
+	// RouteInfo returns the route description interface implementation
 	RouteInfo() RouteInfo
 }
 
-// RouteInfo 路由描述接口
+// RouteInfo route description interface
 type RouteInfo interface {
-	// Router 返回所属路由器
+	// Router returns the belonging router
 	Router() Router
-	// Collector 返回所属收集器
+	// Collector returns the belonging collector
 	Collector() RouteCollector
-	// Name 返回路由名称
+	// Name returns the route name
 	Name() string
-	// Title 返回路由标题
+	// Title returns the route title
 	Title() string
-	// Methods 返回支持的请求方法列表
+	// Methods returns the supported request method list
 	Methods() []string
-	// Pattern 路由路径表达式
+	// Pattern route path expression
 	Pattern() string
-	// Params 返回支持的路由参数列表
+	// Params returns the supported route parameter list
 	Params() []string
-	// Reverse 通过提供的参数来反转路由表达式，返回为真实请求路径。
-	// 如果参数为空或 nil 时则尝试使用用默认值，若无法解决参数
-	// 则会 panic 错误
+	// Reverse reverses the route expression through provided parameters, returning a real request path.
+	// If the parameters are empty or nil, it tries to use default values, and if the parameters
+	// cannot be resolved, it will panic with an error
 	Reverse(params ...any) string
-	// String 返回字符串形式
+	// String returns string form
 	String() string
 }
 
@@ -253,11 +254,11 @@ var nextRouteId uint32
 var _ Router = (*routerImpl)(nil)
 
 type routerImpl struct {
-	collector    RouteCollector   // 路由收集器
-	tree         *node            // 路由节点树，与根节点的节点树相同
-	routes       []Route          // 实际类型是 `[]*routeImpl`
-	middleware   []MiddlewareFunc // 中间件列表
-	errorHandler ErrorHandler     // 路由级别的错误处理器
+	collector    RouteCollector   // route collector
+	tree         *node            // route node tree, same as root node tree
+	routes       []Route          // actual type is `[]*routeImpl`
+	middleware   []MiddlewareFunc // middleware list
+	errorHandler ErrorHandler     // route-level error handler
 	slim         *Slim
 
 	allowOverwritingRoute    bool
@@ -313,9 +314,9 @@ func (r *routerImpl) Add(methods []string, pattern string, h HandlerFunc) (Route
 			})
 		}
 	}
-	sort.Sort(tail.leaf.endpoints) // 对端点排序
+	sort.Sort(tail.leaf.endpoints) // Sort endpoints
 	r.routes = append(r.routes, route)
-	// TODO(hupeh): 如何针对 remove 处理
+	// TODO(hupeh): How to handle remove
 	if r.slim.contextPathParamAllocSize < tail.leaf.paramsCount {
 		r.slim.contextPathParamAllocSize = tail.leaf.paramsCount
 	}
@@ -386,7 +387,7 @@ func (r *routerImpl) File(pattern, file string) Route {
 	return r.collector.File(pattern, file)
 }
 
-// Remove 通过 `method+pattern` 的组合移除服务端点
+// Remove service endpoint through combination of `method+pattern`
 func (r *routerImpl) Remove(methods []string, path string) error {
 	segments, trailingSlash := split(path)
 	routes, ok := r.tree.remove(methods, trailingSlash, r.routingTrailingSlash, segments, 0)
@@ -422,18 +423,18 @@ func (r *routerImpl) Match(req *http.Request, pathParams *PathParams) RouteMatch
 		*pathParams = (*pathParams)[0:0]
 		return result
 	}
-	// 安装叶子参数数量重新分配长度
+	// Reallocate length based on leaf parameter count
 	*pathParams = (*pathParams)[0:tail.leaf.paramsCount]
 	var ep *endpoint
 	result.AllowMethods, ep = tail.leaf.match(req.Method)
 	if ep == nil || (ep.trailingSlash != tailingSlash && !r.routingTrailingSlash) {
-		// TODO(hupeh): 在使用 OPTIONS 方法的情况下，可以使用该节点拥有的方法列表进行响应。
+		// TODO(hupeh): In case of OPTIONS method, can respond using the method list owned by this node.
 		// FIXME: See https://httpwg.org/specs/rfc7231.html#OPTIONS
 		result.Type = RouteMatchMethodNotAllowed
 		result.Handler = MethodNotAllowedHandler
 		return result
 	}
-	// 查找路由
+	// Find route
 	var route *routeImpl
 	for _, rr := range r.routes {
 		dr := rr.(*routeImpl)
@@ -442,7 +443,7 @@ func (r *routerImpl) Match(req *http.Request, pathParams *PathParams) RouteMatch
 			break
 		}
 	}
-	// 找不到直接内部错误
+	// Internal error if not found
 	if route == nil {
 		panic(fmt.Errorf(
 			"slim: route %s@%s#%d not found",
@@ -500,9 +501,10 @@ func (r *routerImpl) HandleError(c Context, err error) {
 	if r.errorHandler != nil {
 		r.errorHandler.HandleError(c, err)
 	} else if eh := r.slim.ErrorHandler; eh != nil {
-		// 这里千万不能使用 c.Error(err) 来处理错误，否则
-		// 会陷入死循环，这是因为方法 c.Error 是从路由向上
-		// 递归查找错误处理器来处理错误的。
+		// Do not use c.Error(err) to handle errors here, otherwise
+		// it will cause an infinite loop, because the c.Error method
+		// recursively searches for error handlers from the route up
+		// to handle errors.
 		eh.HandleError(c, err)
 	}
 }
@@ -533,7 +535,7 @@ func (r *routerImpl) Reverse(name string, params ...any) string {
 	return ""
 }
 
-// ComposeChainHandler 组合路由收集器的中间件和路由的中间件
+// ComposeChainHandler composes middleware from route collector and route middleware
 func ComposeChainHandler(route Route) HandlerFunc {
 	return func(c Context) error {
 		stack := make([]MiddlewareFunc, 0)
@@ -544,7 +546,7 @@ func ComposeChainHandler(route Route) HandlerFunc {
 			}
 			collector = collector.Parent()
 		}
-		// 上面是逆向的，所以这里要反转
+		// The above is reverse, so need to reverse here
 		slices.Reverse(stack)
 		mw := Compose(stack...)
 		h := HandlerFunc(func(c Context) error {
@@ -565,10 +567,10 @@ func ComposeChainHandler(route Route) HandlerFunc {
 var _ RouteCollector = (*routeCollectorImpl)(nil)
 
 type routeCollectorImpl struct {
-	prefix       string           // 路由前缀
-	parent       RouteCollector   // 上级路由收集器
-	router       Router           // 上级路由器
-	middleware   []MiddlewareFunc // 中间件列表
+	prefix       string           // route prefix
+	parent       RouteCollector   // parent route collector
+	router       Router           // parent router
+	middleware   []MiddlewareFunc // middleware list
 	errorHandler ErrorHandler
 }
 
@@ -592,10 +594,8 @@ func geteh(c Context, vs ...any) (ErrorHandler, bool) {
 			}
 		}
 	}
-	if s, ok := c.Value(SlimContextKey).(*Slim); ok {
-		if eh := s.ErrorHandler; eh != nil {
-			return eh, true
-		}
+	if eh := c.Slim().ErrorHandler; eh != nil {
+		return eh, true
 	}
 	return nil, false
 }
@@ -647,7 +647,7 @@ func (rc *routeCollectorImpl) Some(methods []string, pattern string, h HandlerFu
 	if err != nil {
 		panic(err)
 	}
-	// TODO(hupeh): 需要更加合理的方式设置路由收集器
+	// TODO(hupeh): Need a more reasonable way to set route collector
 	if dr, ok := route.(*routeImpl); ok {
 		dr.collector = rc
 	}
@@ -703,11 +703,11 @@ func (rc *routeCollectorImpl) Static(prefix, root string) Route {
 }
 
 func (rc *routeCollectorImpl) File(pattern, file string) Route {
-    if filepath.IsAbs(file) {
-        rel := strings.TrimPrefix(filepath.Clean(file), string(filepath.Separator))
-        return rc.GET(pattern, func(c Context) error { return c.File(rel, os.DirFS(string(filepath.Separator))) })
-    }
-    return rc.GET(pattern, func(c Context) error { return c.File(file) })
+	if filepath.IsAbs(file) {
+		rel := strings.TrimPrefix(filepath.Clean(file), string(filepath.Separator))
+		return rc.GET(pattern, func(c Context) error { return c.File(rel, os.DirFS(string(filepath.Separator))) })
+	}
+	return rc.GET(pattern, func(c Context) error { return c.File(file) })
 }
 
 // StaticDirectoryHandler creates handler function to serve files from given a root path
@@ -781,7 +781,7 @@ func (r *routeImpl) Remove() {
 			return route.(*routeImpl).id == r.id
 		})
 	} else {
-		// 为自定义路由器提供移除子路由的预留接口
+		// Reserved interface for custom routers to remove sub-routes
 		if i, yes := router.(interface{ RemoveRoute(Route) }); yes {
 			i.RemoveRoute(r)
 		}
@@ -797,7 +797,7 @@ func (r *routeImpl) Reverse(params ...any) string {
 			for ; i < l && r.pattern[i] != pathSeparator; i++ {
 			}
 			if n < ln {
-				uri.WriteString(fmt.Sprintf("%v", params[n]))
+				fmt.Fprintf(uri, "%v", params[n])
 			}
 			n++
 		}

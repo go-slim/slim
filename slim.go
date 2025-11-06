@@ -28,43 +28,43 @@ type HandlerFunc func(c Context) error
 // MiddlewareFunc defines a function to process middleware.
 type MiddlewareFunc func(c Context, next HandlerFunc) error
 
-// MiddlewareRegistrar 中间件注册接口
+// MiddlewareRegistrar middleware registration interface
 type MiddlewareRegistrar interface {
-	// Use 注册中间件
+	// Use registers middleware
 	Use(middleware ...MiddlewareFunc)
-	// Middleware 返回注册的所有中间件
+	// Middleware returns all registered middleware
 	Middleware() []MiddlewareFunc
 }
 
-// MiddlewareComposer 中间件合成器接口
+// MiddlewareComposer middleware composer interface
 type MiddlewareComposer interface {
-	// Compose 将注册的所有中间件合并成一个中间件
+	// Compose merges all registered middleware into one middleware
 	Compose() MiddlewareFunc
 }
 
 // ErrorHandler is a centralized error handler.
 type ErrorHandler interface {
-	// HandleError 处理错误
+	// HandleError handles errors
 	HandleError(c Context, err error)
 }
 
 // ErrorHandlerFunc defines a function to centralize errors.
 type ErrorHandlerFunc func(c Context, err error)
 
-// HandleError 实现 ErrorHandler 接口
+// HandleError implements ErrorHandler interface
 func (h ErrorHandlerFunc) HandleError(c Context, err error) {
 	h(c, err)
 }
 
-// ErrorHandlerRegistrar 错误处理器注册接口
+// ErrorHandlerRegistrar error handler registration interface
 type ErrorHandlerRegistrar interface {
-	// UseErrorHandler 注册错误处理器
-	// 重复调用该方法会覆盖之前设置的错误处理器
+	// UseErrorHandler registers error handler
+	// Repeated calls to this method will override the previously set error handler
 	UseErrorHandler(h ErrorHandler)
 }
 
 type MiddlewareConfigurator interface {
-	// ToMiddleware 将实例转换成中间件函数
+	// ToMiddleware converts instance to middleware function
 	ToMiddleware() MiddlewareFunc
 }
 
@@ -82,53 +82,36 @@ type Map map[string]any
 
 type RouterCreator func(*Slim) Router
 
-// contextKey is a value for use with context.WithValue. It's used as
-// a pointer so it fits in an interface{} without allocation.
-type contextKey struct {
-	name string
-}
-
-func (k *contextKey) String() string {
-	return "slim context value " + k.name
-}
-
-var (
-	SlimContextKey     = &contextKey{"slim"}
-	RequestContextKey  = &contextKey{"request"}
-	ResponseContextKey = &contextKey{"response"}
-	ContextKey         = &contextKey{"context"}
-)
-
 type Slim struct {
 	// startupMutex is mutex to lock Server instance access during server configuration and startup. Useful for to get
 	// listener address info (on which interface/port was listener bound) without having data races.
 	startupMutex sync.RWMutex
 
-	// middleware 中间件列表
+	// middleware list
 	middleware []MiddlewareFunc
 
-	// router 默认路由
+	// router default router
 	router Router
-	// routers 虚拟主机（Virtual Hosting）表，是对虚拟主机的简单实现，
-	// 支持实域名和泛域名两种模式，当请求的域名不在此表内时使用 Slim.router，
-	// 所以其优先级高于 Slim.router。
+	// routers virtual hosting table, is a simple implementation of virtual hosting,
+	// supports both real domain and wildcard domain modes, when the requested domain is not in this table, use Slim.router,
+	// so its priority is higher than Slim.router.
 	routers map[string]Router
-	// routerCreator 创建自定义路由
+	// routerCreator create custom router
 	routerCreator RouterCreator
 
-	// contextPool 网络请求上下文管理池
+	// contextPool network request context management pool
 	contextPool sync.Pool
-	// contextPathParamAllocSize 上下文中参数的最大数量
+	// contextPathParamAllocSize maximum number of parameters in context
 	contextPathParamAllocSize int
 
 	negotiator *Negotiator
 
-	NewContextFunc       func(pathParamAllocSize int) EditableContext // 自定义 `slim.Context` 构造函数
+	NewContextFunc       func(pathParamAllocSize int) EditableContext // custom `slim.Context` constructor function
 	ErrorHandler         ErrorHandlerFunc
-	Filesystem           fs.FS // 静态资源文件系统，默认值 `os.DirFS(".")`。
+	Filesystem           fs.FS // static resource file system, default value `os.DirFS(".")`.
 	Binder               Binder
 	Validator            Validator
-	Renderer             Renderer // 自定义模板渲染器
+	Renderer             Renderer // custom template renderer
 	JSONCodec            Codec
 	XMLCodec             Codec
 	Server               *http.Server
@@ -141,10 +124,10 @@ type Slim struct {
 	HideBanner           bool
 	HidePort             bool
 	ListenerNetwork      string
-	Debug                bool     // 是否开启调试模式
-	MultipartMemoryLimit int64    // 文件上传大小限制
-	PrettyIndent         string   // json/xml 格式化缩进
-	JSONPCallbacks       []string // jsonp 回调函数
+	Debug                bool     // whether to enable debug mode
+	MultipartMemoryLimit int64    // file upload size limit
+	PrettyIndent         string   // json/xml formatting indentation
+	JSONPCallbacks       []string // jsonp callback functions
 	IPExtractor          IPExtractor
 }
 
@@ -213,23 +196,23 @@ func (s *Slim) NewRouter() Router {
 	return r
 }
 
-// Router 返回默认路由器
+// Router returns the default router
 func (s *Slim) Router() Router {
 	return s.router
 }
 
-// Routers 返回 vhost 的 `host => router` 映射
+// Routers returns vhost's `host => router` mapping
 func (s *Slim) Routers() map[string]Router {
 	return s.routers
 }
 
-// RouterFor 返回与指定 `host` 相关的路由器
+// RouterFor returns the router associated with the specified `host`
 func (s *Slim) RouterFor(host string) Router {
 	return s.routers[host]
 }
 
-// ResetRouterCreator 重置路由器创建函数。
-// 注意：会立即重新创建默认路由器，并且 vhost 路由器会被清除。
+// ResetRouterCreator resets the router creator function.
+// Note: will immediately recreate the default router, and vhost routers will be cleared.
 func (s *Slim) ResetRouterCreator(creator func(s *Slim) Router) {
 	s.routerCreator = creator
 	s.router = s.NewRouter()
@@ -241,7 +224,7 @@ func (s *Slim) Use(middleware ...MiddlewareFunc) {
 	s.middleware = append(s.middleware, middleware...)
 }
 
-// Host 通过提供名称和中间件函数创建对应 `host` 的路由器实例
+// Host creates a router instance corresponding to `host` through provided name and middleware functions
 func (s *Slim) Host(name string, middleware ...MiddlewareFunc) Router {
 	router := s.NewRouter()
 	router.Use(middleware...)
@@ -249,12 +232,12 @@ func (s *Slim) Host(name string, middleware ...MiddlewareFunc) Router {
 	return router
 }
 
-// Group 实现路由分组注册，实际调用 `RouteCollector.Route` 实现
+// Group implements route group registration, actually calls `RouteCollector.Route` to implement
 func (s *Slim) Group(fn func(sub RouteCollector)) {
 	s.router.Group(fn)
 }
 
-// Route 以指定前缀实现路由分组注册
+// Route implements route group registration with specified prefix
 func (s *Slim) Route(prefix string, fn func(sub RouteCollector)) {
 	s.router.Route(prefix, fn)
 }
@@ -355,12 +338,12 @@ func (s *Slim) Routes() []Route {
 	return s.router.Routes()
 }
 
-// Negotiator 返回内容协商工具
+// Negotiator returns content negotiation tool
 func (s *Slim) Negotiator() *Negotiator {
 	return s.negotiator
 }
 
-// SetNegotiator 设置自定义内容协商工具
+// SetNegotiator sets custom content negotiation tool
 func (s *Slim) SetNegotiator(negotiator *Negotiator) {
 	s.negotiator = negotiator
 }
@@ -405,23 +388,23 @@ func (s *Slim) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.ReleaseContext(c)
 }
 
-// findRouterByRequest 通过 `*http.Request` 实例获取对应的路由器
+// findRouterByRequest gets the corresponding router through `*http.Request` instance
 func (s *Slim) findRouterByRequest(r *http.Request) Router {
 	if len(s.routers) == 0 {
 		return s.router
 	}
 
-	// 在正常情况下，我们是通过如负载均衡服务器来反向代理我们的程序实现对外服务的，
-	// 所以反向代理的域名或端口号可能会与处理请求的源头服务器有所不同，在这种情况下，
-	// 可以使用报头 X-Forwarded-Host 用来确定哪一个域名是最初被用来访问的。
+	// Under normal circumstances, we use reverse proxy servers like load balancers to reverse proxy our programs to provide external services,
+	// so the reverse proxy's domain name or port number may be different from the source server handling the request, in this case,
+	// we can use the X-Forwarded-Host header to determine which domain name was originally used for access.
 	// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/X-Forwarded-Host
 	host := r.Header.Get("X-Forwarded-Host")
 
 	if host == "" {
-		// 报头 X-Forwarded-Host 不属于任何一份既有规范，所以有可能无法获取到数据，
-		// 此时根据 RFC 7239 标准定义的另外一个报头 Forwarded 来来获取包含代理服务器的
-		// 客户端的信息；在这里，为什么 RFC 标准滞后于 X-Forwarded-Host 的原因是
-		// 由于后者已经成为既成标准了。
+		// The X-Forwarded-Host header does not belong to any existing specification, so it may not be possible to obtain data,
+		// at this time, use another header Forwarded defined by RFC 7239 standard to obtain information containing the proxy server's
+		// client information; here, the reason why RFC standard lags behind X-Forwarded-Host is because
+		// the latter has already become a de facto standard.
 		// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Forwarded
 		if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
 			for forwardedPair := range strings.SplitSeq(forwarded, ";") {
@@ -445,43 +428,43 @@ func (s *Slim) findRouterByRequest(r *http.Request) Router {
 	return s.findRouter(host)
 }
 
-// findRouter 根据 host 查找路由器
-// Note: 调用该方法前，需要将参数转换成小写形式。
+// findRouter finds router based on host
+// Note: Before calling this method, need to convert the parameter to lowercase.
 func (s *Slim) findRouter(host string) Router {
 	if len(s.routers) > 0 && strings.Contains(host, ".") && host != "." {
-		// 优先使用完全匹配来查找，如：
-		// * 实域名 blog.example.com；
-		// * 泛域名 *.example.com。
+		// Priority is given to exact matching, such as:
+		// * Real domain name blog.example.com；
+		// * Wildcard domain *.example.com.
 		if router, ok := s.routers[host]; ok {
 			return router
 		}
 
-		// 我们只支持简单形式的 host 表达式（如二级域名 *.example.com 或
-		// 三级域名 *.foo.example.com 等形式，不支持复杂的如 *.*.example.com 这类
-		// 的），所以对于已经是泛域名的，就是用默认路由器。
+		// We only support simple forms of host expressions (such as second-level domain *.example.com or
+		// third-level domain *.foo.example.com, etc., do not support complex ones like *.*.example.com),
+		// so for already wildcard domains, use the default router.
 		if host[:2] == "*." {
 			goto fallback
 		}
 
 		i := strings.IndexByte(host, '.')
 		j := strings.LastIndexByte(host, '.')
-		// 参数 host 至少是一个二级域名才行，所以对于非域名或
-		// 一级域名，我们同样采用默认路由器。
+		// The parameter host must be at least a second-level domain, so for non-domain names or
+		// first-level domains, we also use the default router.
 		if i == -1 || i == j {
 			goto fallback
 		}
 
-		// 将 host 转化成 *.example.com 或 *.foo.example.com 的形式，
-		// 然后到虚拟主机表里面查询关联的路由器。
-		// 注意：应使用第一个点后的子串以匹配如 foo.example.com -> *.example.com
+		// Convert host to the form of *.example.com or *.foo.example.com,
+		// then query the virtual host table for associated routers.
+		// Note: should use the substring after the first dot to match such as foo.example.com -> *.example.com
 		if router, ok := s.routers["*."+host[i+1:]]; ok {
 			return router
 		}
 	}
 
 fallback:
-	// 如果没有注册虚拟主机，就返回默认路由就可以了，
-	// 所以对于非 SASS 系统，尽量不启用虚拟主机功能。
+	// If no virtual host is registered, just return the default router,
+	// so for non-SAAS systems, try not to enable virtual host functionality.
 	return s.router
 }
 
@@ -505,17 +488,17 @@ func (s *Slim) findHandler(c EditableContext, router Router) HandlerFunc {
 	return match.Handler
 }
 
-// handleError 处理路由执行错误
+// handleError handles route execution errors
 func (s *Slim) handleError(c Context, err error) {
 	if err == nil {
 		return
 	}
 
-	// FIXME: 这里有点问题需要考虑：
-	//  如果错误发生在中间件中，就不需要后续的 RouterCollector 的
-	//  错误处理器来处理，而应该提交给上级来处理。
+	// FIXME: There's an issue to consider here:
+	//  If the error occurs in middleware, it doesn't need the subsequent RouterCollector's
+	//  error handler to handle it, but should be submitted to the upper level for handling.
 	if info := c.RouteInfo(); info != nil {
-		// 优先使用路由收集器中定义的错误处理器处理错误
+		// Priority is given to handling errors with error handlers defined in the route collector
 		collector := info.Collector()
 		for collector != nil {
 			if i, ok := collector.(ErrorHandler); ok {
@@ -524,7 +507,7 @@ func (s *Slim) handleError(c Context, err error) {
 			}
 			collector = collector.Parent()
 		}
-		// 路由器中定义的错误处理器次之
+		// Error handlers defined in the router are secondary
 		router := info.Router()
 		if i, ok := router.(ErrorHandler); ok {
 			i.HandleError(c, err)
@@ -532,7 +515,7 @@ func (s *Slim) handleError(c Context, err error) {
 		}
 	}
 
-	// 最后使用上下文的错误处理器。
+	// Finally use the context's error handler.
 	c.Error(err)
 }
 
@@ -815,13 +798,13 @@ func Tap(h HandlerFunc, mw ...MiddlewareFunc) HandlerFunc {
 	}
 }
 
-// DefaultErrorHandler 默认错误处理函数
+// DefaultErrorHandler default error handling function
 func DefaultErrorHandler(c Context, err error) {
 	if c.Written() {
 		fmt.Fprintf(c.Slim().output(), "Error: %v\n", err)
 		return
 	}
-	// TODO(hupeh): 根据 Accept 报头返回对应的格式
+	// TODO(hupeh): Return corresponding format based on Accept header
 	if errors.Is(err, ErrNotFound) {
 		http.NotFound(c.Response(), c.Request())
 	} else if errors.Is(err, ErrMethodNotAllowed) {

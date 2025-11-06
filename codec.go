@@ -6,18 +6,18 @@ import (
 	"io"
 )
 
-// Codec 定义了数据的编码和解码接口
+// Codec defines the encoding and decoding interface for data
 type Codec interface {
-	// Encode 将数据编码为字节流
+	// Encode encodes data into byte stream
 	Encode(w io.Writer, v any, indent string) error
-	// Decode 从字节流解码数据
+	// Decode decodes data from byte stream
 	Decode(r io.Reader, v any) error
 }
 
-// JSONCodec 为 JSON 实现序列化接口
+// JSONCodec implements encoding and decoding interface for JSON
 type JSONCodec struct{}
 
-// Encode 序列化数据到 w 接口
+// Encode serializes data to w interface
 func (JSONCodec) Encode(w io.Writer, v any, indent string) error {
 	enc := json.NewEncoder(w)
 	if indent != "" {
@@ -26,11 +26,12 @@ func (JSONCodec) Encode(w io.Writer, v any, indent string) error {
 	return enc.Encode(v)
 }
 
-// Decode 反序列化数据并绑定到 v 上
+// Decode deserializes data and binds it to v
 func (JSONCodec) Decode(r io.Reader, v any) error {
 	return json.NewDecoder(r).Decode(v)
 }
 
+// XMLCodec implements encoding and decoding interface for XML
 type XMLCodec struct{}
 
 func (XMLCodec) Encode(w io.Writer, v any, indent string) error {

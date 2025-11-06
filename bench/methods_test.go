@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gofiber/fiber/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/gofiber/fiber/v2"
 	"github.com/labstack/echo/v4"
 	"go-slim.dev/slim"
 )
@@ -31,8 +31,7 @@ func BenchmarkHEAD_Explicit_Slim(b *testing.B) {
 	h := setupSlimMethods()
 	req := httptest.NewRequest(http.MethodHead, "/head", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -42,8 +41,7 @@ func BenchmarkOPTIONS_Explicit_Slim(b *testing.B) {
 	h := setupSlimMethods()
 	req := httptest.NewRequest(http.MethodOptions, "/opt", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -62,8 +60,7 @@ func BenchmarkHEAD_Explicit_Gin(b *testing.B) {
 	h := setupGinMethods()
 	req := httptest.NewRequest(http.MethodHead, "/head", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -73,8 +70,7 @@ func BenchmarkOPTIONS_Explicit_Gin(b *testing.B) {
 	h := setupGinMethods()
 	req := httptest.NewRequest(http.MethodOptions, "/opt", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -95,8 +91,7 @@ func BenchmarkHEAD_Explicit_Echo(b *testing.B) {
 	h := setupEchoMethods()
 	req := httptest.NewRequest(http.MethodHead, "/head", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -106,8 +101,7 @@ func BenchmarkOPTIONS_Explicit_Echo(b *testing.B) {
 	h := setupEchoMethods()
 	req := httptest.NewRequest(http.MethodOptions, "/opt", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -125,8 +119,7 @@ func BenchmarkHEAD_Explicit_Fiber(b *testing.B) {
 	app := setupFiberMethods()
 	req := httptest.NewRequest(http.MethodHead, "/head", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = app.Test(req, -1)
 	}
 }
@@ -135,8 +128,7 @@ func BenchmarkOPTIONS_Explicit_Fiber(b *testing.B) {
 	app := setupFiberMethods()
 	req := httptest.NewRequest(http.MethodOptions, "/opt", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = app.Test(req, -1)
 	}
 }
@@ -157,8 +149,7 @@ func BenchmarkHEAD_Explicit_Chi(b *testing.B) {
 	h := setupChiMethods()
 	req := httptest.NewRequest(http.MethodHead, "/head", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -168,8 +159,7 @@ func BenchmarkOPTIONS_Explicit_Chi(b *testing.B) {
 	h := setupChiMethods()
 	req := httptest.NewRequest(http.MethodOptions, "/opt", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}

@@ -23,7 +23,7 @@ func newSlimWithMW(n int) http.Handler {
 	s.Debug = false
 	s.StdLogger = nil
 	// 构造 n 层无操作中间件
-	for i := 0; i < n; i++ {
+	for range n {
 		s.Use(func(c slim.Context, next slim.HandlerFunc) error { return next(c) })
 	}
 	s.GET("/mw", func(c slim.Context) error { return c.String(http.StatusOK, "ok") })
@@ -34,8 +34,8 @@ func benchSlimMW(b *testing.B, n int) {
 	h := newSlimWithMW(n)
 	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -48,7 +48,7 @@ func BenchmarkMiddleware10_Slim(b *testing.B) { benchSlimMW(b, 10) }
 func newGinWithMW(n int) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	for i := 0; i < n; i++ {
+	for range n {
 		r.Use(func(c *gin.Context) { c.Next() })
 	}
 	r.GET("/mw", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
@@ -59,8 +59,8 @@ func benchGinMW(b *testing.B, n int) {
 	h := newGinWithMW(n)
 	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -75,7 +75,7 @@ func newEchoWithMW(n int) http.Handler {
 	e.HideBanner = true
 	e.HidePort = true
 	e.Debug = false
-	for i := 0; i < n; i++ {
+	for range n {
 		e.Use(func(next echo.HandlerFunc) echo.HandlerFunc { return func(c echo.Context) error { return next(c) } })
 	}
 	e.GET("/mw", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
@@ -86,8 +86,7 @@ func benchEchoMW(b *testing.B, n int) {
 	h := newEchoWithMW(n)
 	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
@@ -99,7 +98,7 @@ func BenchmarkMiddleware10_Echo(b *testing.B) { benchEchoMW(b, 10) }
 // ------------------------ Fiber ------------------------
 func newFiberWithMW(n int) *fiber.App {
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
-	for i := 0; i < n; i++ {
+	for range n {
 		app.Use(func(c *fiber.Ctx) error { return c.Next() })
 	}
 	app.Get("/mw", func(c *fiber.Ctx) error { return c.SendString("ok") })
@@ -110,8 +109,7 @@ func benchFiberMW(b *testing.B, n int) {
 	app := newFiberWithMW(n)
 	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = app.Test(req, -1)
 	}
 }
@@ -123,7 +121,7 @@ func BenchmarkMiddleware10_Fiber(b *testing.B) { benchFiberMW(b, 10) }
 func newChiWithMW(n int) http.Handler {
 	r := chi.NewRouter()
 	// 构造 n 层无操作中间件
-	for i := 0; i < n; i++ {
+	for range n {
 		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				next.ServeHTTP(w, r)
@@ -141,8 +139,8 @@ func benchChiMW(b *testing.B, n int) {
 	h := newChiWithMW(n)
 	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}

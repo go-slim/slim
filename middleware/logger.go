@@ -85,7 +85,7 @@ func (l LoggerConfig) ToMiddleware() slim.MiddlewareFunc {
 
 		LogBegin(c)
 		if err := next(c); err != nil {
-			// 需要再 ErrorHandler 里面完成
+			// Needs to be completed in ErrorHandler
 			return err
 		}
 		LogEnd(c, nil)
@@ -112,7 +112,7 @@ func ProvideLogEntry(c slim.Context, entry LogEntry) {
 
 // GetLogEntry returns the in-context LogEntry for a slim context.
 func GetLogEntry(c slim.Context) LogEntry {
-	entry, _ := c.Value(logEntryCtxKey).(LogEntry)
+	entry, _ := valueFromContext[LogEntry](c, logEntryCtxKey)
 	return entry
 }
 
@@ -137,7 +137,7 @@ func ProvideLogPayload(c slim.Context, p LogPayload) {
 
 // GetLogPayload returns the in-context LogPayload for a slim context.
 func GetLogPayload(c slim.Context) (LogPayload, bool) {
-	p, ok := c.Value(logPayloadCtxKey).(LogPayload)
+	p, ok := valueFromContext[LogPayload](c, logPayloadCtxKey)
 	return p, ok
 }
 
@@ -152,7 +152,7 @@ func LogBegin(c slim.Context) {
 		p.Method = cmp.Or(p.Method, req.Method)
 		p.RemoteAddr = cmp.Or(p.RemoteAddr, req.RemoteAddr)
 	}
-	entry, ok := c.Value(logEntryCtxKey).(LogEntry)
+	entry, ok := valueFromContext[LogEntry](c, logEntryCtxKey)
 	if ok && entry != nil {
 		p.Extra = entry.Begin(c)
 	}
@@ -176,7 +176,7 @@ func LogEnd(c slim.Context, err error) {
 		p.Extra = make(map[string]any)
 	}
 
-	entry, ok := c.Value(logEntryCtxKey).(LogEntry)
+	entry, ok := valueFromContext[LogEntry](c, logEntryCtxKey)
 	if !ok || entry == nil {
 		entry = DefaultLoggerConfig.NewEntry(c)
 	}
@@ -219,9 +219,9 @@ func (d *defaultLogEntry) SetTimeLayout(layout string) {
 }
 
 // LogCategoryMark
-// zeroWidthNonJoiner := "\u200C" // 零宽非连接符
-// zeroWidthSpace := "\u200B" // 零宽空格
-// zeroWidthJoiner := "\u200D" // 零宽连接符
+// zeroWidthNonJoiner := "\u200C" // zero-width non-joiner
+// zeroWidthSpace := "\u200B" // zero-width space
+// zeroWidthJoiner := "\u200D" // zero-width joiner
 const LogCategoryMark = "\u200C\u200B\u200D"
 
 var UseLogCategoryMark = false
@@ -329,7 +329,7 @@ func formatExtra(p map[string]any) []byte {
 	enc.SetEscapeHTML(false)
 	err := enc.Encode(p)
 	if err == nil && !cw.cutoffHit {
-		return cw.buf[:] // 可接受单行输出
+		return cw.buf[:] // acceptable single-line output
 	}
 	pretty, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {

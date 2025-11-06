@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -46,7 +47,7 @@ func parseFile(path string) ([]Sample, error) {
 			framework := parts[len(parts)-1]
 			// base is the thing after "Benchmark" in the first part
 			base := strings.TrimPrefix(parts[0], "Benchmark") // Params, HEAD, OPTIONS, ...
-			middle := parts[1 : len(parts)-1]                   // e.g., [Explicit]
+			middle := parts[1 : len(parts)-1]                 // e.g., [Explicit]
 			var caseName string
 			if len(middle) == 0 {
 				caseName = base
@@ -76,7 +77,11 @@ func groupByCase(samples []Sample) map[string][]Sample {
 
 // aggregate averages repeated samples for the same (Case, Framework)
 func aggregate(samples []Sample) []Sample {
-	type acc struct{ ns, b float64; alloc float64; n int }
+	type acc struct {
+		ns, b float64
+		alloc float64
+		n     int
+	}
 	accm := map[string]acc{}
 	for _, s := range samples {
 		k := s.Case + "\x00" + s.Framework
@@ -99,19 +104,6 @@ func aggregate(samples []Sample) []Sample {
 		})
 	}
 	return out
-}
-
-func uniqueFrameworks(samples []Sample) []string {
-	set := map[string]struct{}{}
-	for _, s := range samples {
-		set[s.Framework] = struct{}{}
-	}
-	var list []string
-	for k := range set {
-		list = append(list, k)
-	}
-	sort.Strings(list)
-	return list
 }
 
 func main() {
@@ -174,17 +166,21 @@ func main() {
 	// Stabilize framework order: prefer this order if present, then append unknowns sorted.
 	preferred := []string{"Slim", "Gin", "Echo", "Fiber", "Chi"}
 	set := map[string]struct{}{}
-	for _, s := range all { set[s.Framework] = struct{}{} }
+	for _, s := range all {
+		set[s.Framework] = struct{}{}
+	}
 	var frameworks []string
 	for _, p := range preferred {
-		if _, ok := set[p]; ok { frameworks = append(frameworks, p) }
+		if _, ok := set[p]; ok {
+			frameworks = append(frameworks, p)
+		}
 	}
 	// collect unknowns
 	var unknowns []string
 	for k := range set {
-		known := false
-		for _, p := range preferred { if k == p { known = true; break } }
-		if !known { unknowns = append(unknowns, k) }
+		if !slices.Contains(preferred, k) {
+			unknowns = append(unknowns, k)
+		}
 	}
 	sort.Strings(unknowns)
 	frameworks = append(frameworks, unknowns...)
@@ -220,11 +216,11 @@ func main() {
 				allocs = append(allocs, "null")
 			}
 		}
-		// labels 使用 JSON 序列化，确保是合法的 JS 字符串数组
+		// labels use JSON serialization to ensure valid JS string arrays
 		if lb, err := json.Marshal(frameworks); err == nil {
 			sb.WriteString(fmt.Sprintf("    labels: %s,\n", string(lb)))
 		} else {
-			// 退化：以逗号拼接（不太可能触发）
+			// Fallback: concatenate with commas (unlikely to trigger)
 			sb.WriteString(fmt.Sprintf("    labels: [%s],\n", strings.Join(frameworks, ",")))
 		}
 		sb.WriteString(fmt.Sprintf("    nsop: [%s],\n", strings.Join(nsOps, ",")))

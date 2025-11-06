@@ -5,13 +5,13 @@ import (
 	"sync/atomic"
 )
 
-// Explicitly 一个承上启下的中间件
+// Explicitly a middleware that connects the previous and next
 func Explicitly(c Context, next HandlerFunc) error {
 	return next(c)
 }
 
-// Compose 将多个中间件合并为一个，在执行期间，会自上而下传递请求，
-// 之后过滤并逆序返回响应，因此实现了友好且符合直观思维的洋葱模型。
+// Compose merges multiple middlewares into one. During execution, it passes requests from top to bottom,
+// then filters and returns responses in reverse order, thus implementing a friendly and intuitive onion model.
 func Compose(middleware ...MiddlewareFunc) MiddlewareFunc {
 	l := len(middleware)
 	if l == 0 {

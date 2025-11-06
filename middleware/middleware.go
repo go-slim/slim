@@ -24,3 +24,8 @@ func valueIntoContext(c slim.Context, ctxKey, value any) {
 	ctx = context.WithValue(ctx, ctxKey, value)
 	c.SetRequest(c.Request().WithContext(ctx))
 }
+
+func valueFromContext[T any](c slim.Context, ctxKey any) (T, bool) {
+	t, ok := c.Request().Context().Value(ctxKey).(T)
+	return t, ok
+}

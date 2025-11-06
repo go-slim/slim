@@ -96,20 +96,19 @@ type cache struct {
 
 // Negotiator An HTTP content negotiator
 type Negotiator struct {
-	// 缓存容量
+	// Cache capacity
 	capacity int
-	// 有些时候，解析出来的 Accept 并
-	// 不是 W3C 所定义的标准的值，我们
-	// 通过该函数将其重写成标准格式的值。
+	// Sometimes, the parsed Accept is not a standard value defined by W3C,
+	// we use this function to rewrite it into standard format.
 	onParse func(*Accept)
-	// 内容协商的报头很少变化，可以使用缓存优化，
-	// 不需要每次解析
+	// Content negotiation headers rarely change, can use caching optimization,
+	// no need to parse every time
 	caches map[string]*cache
-	// 用于合并解析，优化并发
+	// Used for merge parsing, optimize concurrency
 	sfg singleflight.Group
 }
 
-// New 返回内容协商器实例
+// New returns a content negotiator instance
 func NewNegotiator(capacity int, onParse func(accept *Accept)) *Negotiator {
 	if capacity <= 0 {
 		capacity = 10
@@ -229,9 +228,9 @@ type AcceptSlice []Accept
 
 func onAcceptParsed(*Accept) {}
 
-// 解析 HTTP 的 Accept(-Charset|-Encoding|-Language) 报头，
-// 返回 AcceptSlice，该结果是根据值的类型和权重因子按照降序排列的，
-// 如果类型一致且权重一致，则使用出场的先后顺序排列。
+// Parse HTTP Accept(-Charset|-Encoding|-Language) headers,
+// returns AcceptSlice, the result is sorted in descending order based on value type and weight factor,
+// if type and weight are the same, use the order of appearance.
 //
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14
 func newSlice(header string, onParse func(*Accept)) AcceptSlice {
@@ -347,9 +346,9 @@ func (slice AcceptSlice) Negotiate(ctypes ...string) (string, int, error) {
 		typeSubtypes = append(typeSubtypes, ts)
 	}
 
-	// 由于 slice 是根据权重排序的，返回的值
-	// 当然也要依据权重来返回，所以先查看 slice，
-	// 然后循环 ctypes。
+	// Since slice is sorted by weight, the returned value
+	// should also be based on weight, so check slice first,
+	// then loop through ctypes.
 	for _, a := range slice {
 		for i, ts := range typeSubtypes {
 			if ((a.Type == ts[0] || a.Type == "*") && (a.Subtype == ts[1] || a.Subtype == "*")) ||

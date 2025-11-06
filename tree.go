@@ -27,7 +27,7 @@ func split(s string) ([]string, bool) {
 	var segments []string
 	start := -1
 	l := len(s)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		if s[i] != pathSeparator {
 			continue
 		}
