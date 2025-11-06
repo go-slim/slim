@@ -195,6 +195,7 @@ func BenchmarkResponse_File_Large(b *testing.B) {
 func BenchmarkRouter_BuildTime_50k(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
+		b.StopTimer()
 		s := New()
 		s.StdLogger = nil
 		b.StartTimer()
@@ -202,13 +203,13 @@ func BenchmarkRouter_BuildTime_50k(b *testing.B) {
 			p := "/bt/" + strconv.Itoa(j)
 			s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
 		}
-		b.StopTimer()
 	}
 }
 
 func BenchmarkRouter_BuildTime_100k(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
+		b.StopTimer()
 		s := New()
 		s.StdLogger = nil
 		b.StartTimer()
@@ -216,7 +217,6 @@ func BenchmarkRouter_BuildTime_100k(b *testing.B) {
 			p := "/bt2/" + strconv.Itoa(j)
 			s.GET(p, func(c Context) error { return c.NoContent(http.StatusOK) })
 		}
-		b.StopTimer()
 	}
 }
 
